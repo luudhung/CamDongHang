@@ -1,0 +1,23 @@
+# Local runtime, recordings and credentials must stay on this machine.
+.runtime/
+Videos/
+temp_compressed/
+camera_config.json
+recording_stats.json
+.recording-save.lock
+__pycache__/
+*.py[cod]
+*.log
+.DS_Store
+Thumbs.db
+.env
+.env.*
+.wwebjs_auth/
+.wwebjs_cache/
+node_modules/
+bot.js
+package.json
+package-lock.json
+*.pdf
+installer/*.download-*
+installer/*.download-*.zip

@@ -1,0 +1,6 @@
+{
+    "videos_dir": "Videos",
+    "storage_mode": "offline",
+    "retention_days": 30,
+    "ui_settings": {}
+}

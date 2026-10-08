@@ -1,0 +1,23 @@
+Bundled Python runtimes. Versions and SHA-256 are pinned by the launchers.
+
+Windows: official Python.org embeddable distribution.
+Source: https://www.python.org/ftp/python/3.14.8/python-3.14.8-embeddable-amd64.zip
+Manifest: https://www.python.org/ftp/python/3.14.8/windows-3.14.8.json
+License: LICENSE.txt inside the ZIP and installed runtime.
+
+macOS: Astral python-build-standalone, CPython 3.14.8, release 20261003.
+Project: https://github.com/astral-sh/python-build-standalone
+Release: https://github.com/astral-sh/python-build-standalone/releases/tag/20261003
+Licensing: https://github.com/astral-sh/python-build-standalone/blob/main/docs/running.rst#licensing
+Runtime license files are preserved inside each original archive.
+
+python-3.14.8-embeddable-amd64.zip
+SHA-256: 80292f0e640e373a54bf09f3b94a1472f976f24a10c5bed0d9622e4e44d67447
+
+cpython-3.14.8+20261003-aarch64-apple-darwin-install_only_stripped.tar.gz
+SHA-256: ed14e9042f36c0aa18383f5d9729bcbf17847e842666a793b5a5a5d8505c0ca1
+License entries: python/lib/python3.14/LICENSE.txt, python/lib/python3.14/site-packages/pip-26.2.1.dist-info/licenses/AUTHORS.txt, python/lib/python3.14/site-packages/pip-26.2.1.dist-info/licenses/LICENSE.txt, python/lib/python3.14/site-packages/pip-26.2.1.dist-info/licenses/src/pip/_vendor/cachecontrol/LICENSE.txt
+
+cpython-3.14.8+20261003-x86_64-apple-darwin-install_only_stripped.tar.gz
+SHA-256: 08310045a2611bad730d7c1a01e847a1ea729d9dcfe29110ca67cbdf3998bb54
+License entries: python/lib/python3.14/LICENSE.txt, python/lib/python3.14/site-packages/pip-26.2.1.dist-info/licenses/AUTHORS.txt, python/lib/python3.14/site-packages/pip-26.2.1.dist-info/licenses/LICENSE.txt, python/lib/python3.14/site-packages/pip-26.2.1.dist-info/licenses/src/pip/_vendor/cachecontrol/LICENSE.txt
