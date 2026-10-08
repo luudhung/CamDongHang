@@ -66,7 +66,7 @@ async function start(){
   const script=document.createElement('script');script.src='/studio/script.js';script.onload=()=>{
     window.addEventListener('message',event=>{
       if(event.origin!==location.origin||event.source!==parent||event.data?.type!=='cam-command')return;
-      const ids:Record<string,string>={videos:'videos-btn',statistics:'statistics-btn',settings:'settings-btn',refresh:'refresh-btn'};
+      const ids:Record<string,string>={videos:'videos-btn',statistics:'statistics-btn',settings:'settings-btn',refresh:'refresh-btn',reset:'reset-layout-btn'};
       if(event.data.command==='search'){
         const input=document.getElementById('header-quick-search') as HTMLInputElement;input.value=String(event.data.query||'');input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
       }else if(ids[event.data.command])document.getElementById(ids[event.data.command])?.click();
