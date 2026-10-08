@@ -879,6 +879,41 @@ video {
 
 /* === PIP OVERLAY === */
 
+/* Pointer dragging changes ownership only on release; preview streams keep running. */
+.video-wrapper { cursor: grab; }
+.video-wrapper button, .video-wrapper select, .video-wrapper input { cursor: auto; }
+.camera-dragging, .camera-dragging .video-wrapper { cursor: grabbing; user-select: none; }
+.camera-container.camera-drag-source { opacity: .65; }
+.camera-container.camera-drop-target { outline: 3px solid #60a5fa; outline-offset: -3px; }
+.camera-drop-target::after {
+    content: attr(data-drop-hint);
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(37, 99, 235, .2);
+    color: white;
+    font-weight: 600;
+    text-shadow: 0 1px 4px black;
+    pointer-events: none;
+    z-index: 30;
+}
+.camera-drag-hint {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: #1d4ed8;
+    color: white;
+    font-size: 13px;
+    box-shadow: 0 4px 20px #0006;
+    pointer-events: none;
+    z-index: 2000;
+}
+
 .pip-overlay {
     position: absolute;
     top: 0;

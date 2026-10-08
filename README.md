@@ -63,3 +63,16 @@ Tham số kiểm tra mà không mở server:
 ```sh
 ./run_CamDongHang-mac.command --check-only
 ```
+
+## Kéo thả ghép camera
+
+Giữ chuột trái trên hình camera muốn làm cam phụ, kéo vào hình cam chính rồi thả.
+Camera được kéo vào trở thành cam phụ PiP; camera nhận vẫn là cam chính.
+Có thể kéo cả hình PiP nhỏ sang cam chính khác. Mỗi cam chính ghép một cam phụ;
+4 camera có thể ghép thành 2 cặp. Kéo cam phụ mới vào một cặp sẽ trả cam phụ cũ
+về ô riêng. Vẫn có thể chọn qua menu “Cam phụ”.
+
+Bấm **Reset bố cục** để tách toàn bộ camera thành các ô riêng (2 cam → 2 ô,
+4 cam → 4 ô). Reset chỉ xóa cách ghép đã nhớ, giữ nguyên độ phân giải và nhân viên;
+không xin lại quyền camera hoặc mở lại luồng. Refresh làm mới danh sách thiết bị
+và giữ cách ghép đã lưu. Dừng quay trước khi đổi bố cục hoặc Reset.
