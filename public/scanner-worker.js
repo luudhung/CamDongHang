@@ -15,10 +15,11 @@ function selectScanResult(results) {
         const text = (result.text || '').trim();
         return text && !text.startsWith('#') && !/^(?:https?:\/\/|www\.)/i.test(text);
     });
-    // Employee/stop cards keep priority. An advertising QR must not hide a tracking barcode.
+    // Match the original app: employee/stop cards, then a valid shipping QR.
+    // URL/advertising QR codes were filtered above, so they cannot hide a barcode.
     return candidates.find(r => /^(?:SNV-\d+|LEAVEIT)$/.test(r.text.trim()))
-        || candidates.find(r => r.format !== 'QRCode' && /\d/.test(r.text))
-        || candidates.find(r => r.format === 'QRCode') || candidates[0];
+        || candidates.find(r => r.format === 'QRCode')
+        || candidates.find(r => /\d/.test(r.text)) || candidates[0];
 }
 
 self.addEventListener('message', async ({ data: message }) => {
@@ -48,7 +49,7 @@ self.addEventListener('message', async ({ data: message }) => {
         const results = await ZXingWASM.readBarcodesFromImageData(imageData, {
             formats: ['QRCode', 'Code128', 'Code39', 'Code93', 'Codabar', 'EAN-13',
                 'EAN-8', 'UPC-A', 'UPC-E', 'DataBar', 'DataBarExpanded', 'ITF', 'DataMatrix', 'PDF417'],
-            tryHarder: !!thorough,
+            tryHarder: true,
             tryRotate: true,
             tryInvert: !!thorough,
             maxNumberOfSymbols: 8

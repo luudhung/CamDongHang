@@ -39,11 +39,24 @@ let scannerRestarts = 0;
 const pendingScans = new Map();
 const scanCanvasCache = new WeakMap();
 const scanPasses = new WeakMap();
+const scanMisses = new WeakMap();
+const scannerWaiters = [];
+
+function clearScannerWaiters() {
+    for (const request of scannerWaiters.splice(0)) request.resume(false);
+}
+
+function cancelScanRequests(video) {
+    for (let i = scannerWaiters.length - 1; i >= 0; i--) {
+        if (scannerWaiters[i].video === video) scannerWaiters.splice(i, 1)[0].resume(false);
+    }
+}
 
 function initScannerWorker() {
     if (scannerWorker) scannerWorker.terminate();
     workerReady = false;
     scannerBusy = false;
+    clearScannerWaiters();
     for (const finish of pendingScans.values()) finish(null);
     pendingScans.clear();
     const worker = new Worker('scanner-worker.js');
@@ -63,6 +76,7 @@ function initScannerWorker() {
         console.error('[Scanner] Worker failed:', error.message);
         workerReady = false;
         scannerBusy = false;
+        clearScannerWaiters();
         for (const finish of pendingScans.values()) finish(null);
         pendingScans.clear();
     });
@@ -79,26 +93,31 @@ function getOrCreateScanCanvas(video) {
 }
 
 async function scanCode(video) {
-    // One job across all cameras: never build a queue of stale frames.
-    if (!workerReady || !scannerWorker || scannerBusy || video.readyState < 2) return null;
-    const srcW = video.videoWidth, srcH = video.videoHeight;
-    if (!srcW || !srcH) return null;
-    scannerBusy = true;
+    if (!workerReady || !scannerWorker || video.readyState < 2) return null;
     const worker = scannerWorker;
-    const pass = scanPasses.get(video) || 0;
-    scanPasses.set(video, pass + 1);
-    // Each camera alternates independently. Preserve pixels in the central crop.
-    const center = pass % 2 === 1;
-    const cropW = center ? Math.floor(srcW * 0.6) : srcW;
-    const cropH = center ? Math.floor(srcH * 0.6) : srcH;
-    const cropX = Math.floor((srcW - cropW) / 2);
-    const cropY = Math.floor((srcH - cropH) / 2);
-    const thorough = pass % 3 === 2;
-    const scale = Math.min(1, (center ? 1200 : thorough ? 1440 : 960) / cropW);
-    const width = Math.max(1, Math.round(cropW * scale));
-    const height = Math.max(1, Math.round(cropH * scale));
+    // Fair turns for all cameras. Queue only requests, then capture a fresh frame
+    // when the worker is available; never retain a backlog of camera images.
+    if (scannerBusy && !await new Promise(resume => scannerWaiters.push({ video, resume }))) return null;
+    if (scannerWorker !== worker || !workerReady) return null;
+    scannerBusy = true;
     let bitmap = null;
     try {
+        const srcW = video.videoWidth, srcH = video.videoHeight;
+        if (!srcW || !srcH || video.readyState < 2) return null;
+        const pass = scanPasses.get(video) || 0;
+        scanPasses.set(video, pass + 1);
+        // Each camera alternates independently. Preserve pixels in the central crop.
+        const center = pass % 2 === 1;
+        const cropW = center ? Math.floor(srcW * 0.6) : srcW;
+        const cropH = center ? Math.floor(srcH * 0.6) : srcH;
+        const cropX = Math.floor((srcW - cropW) / 2);
+        const cropY = Math.floor((srcH - cropH) / 2);
+        const thorough = pass % 3 === 2 || (scanMisses.get(video) || 0) >= 2;
+        // Small/dense shipping QR codes need more pixels than a 960px full frame.
+        // Escalate only after misses; keep transfer/capture bounded on 4K cameras.
+        const scale = Math.min(1, (center ? 1920 : thorough ? 2560 : 1440) / cropW);
+        const width = Math.max(1, Math.round(cropW * scale));
+        const height = Math.max(1, Math.round(cropH * scale));
         let imageData;
         if (typeof createImageBitmap === 'function' && typeof OffscreenCanvas !== 'undefined') {
             bitmap = await createImageBitmap(video, cropX, cropY, cropW, cropH, {
@@ -126,6 +145,7 @@ async function scanCode(video) {
                 if (scannerWorker === worker) {
                     worker.terminate();
                     workerReady = false;
+                    clearScannerWaiters();
                     if (scannerRestarts++ < 3) initScannerWorker();
                 }
             }, 2500);
@@ -140,13 +160,18 @@ async function scanCode(video) {
                 console.warn('[Scanner] Transfer failed:', error);
             }
         });
+        scanMisses.set(video, result ? 0 : (scanMisses.get(video) || 0) + 1);
         return result ? result.code : null;
     } catch (error) {
         console.warn('[Scanner] Frame capture failed:', error);
         return null;
     } finally {
         if (bitmap) bitmap.close();
-        if (scannerWorker === worker) scannerBusy = false;
+        if (scannerWorker === worker) {
+            const request = scannerWaiters.shift();
+            if (request) request.resume(true);
+            else scannerBusy = false;
+        }
     }
 }
 
@@ -1131,6 +1156,7 @@ function startScanning(state, videoElement) {
         state.scanInterval = null;
     }
 
+    state.scanVideo = videoElement;
     const scanGeneration = state.scanGeneration = (state.scanGeneration || 0) + 1;
     const scanLoop = async () => {
         if (state.scanGeneration !== scanGeneration) return;
@@ -1190,6 +1216,7 @@ function startPipScanning(mainState, mainVideo, pipVideo) {
     const scanFrequency = parseInt(localStorage.getItem('scanFrequency')) || 300;
 
     const scanState = mainState.pipState;
+    scanState.scanVideo = pipVideo;
     const scanGeneration = scanState.scanGeneration = (scanState.scanGeneration || 0) + 1;
     const pipScanLoop = async () => {
         if (mainState.pipState !== scanState || scanState.scanGeneration !== scanGeneration) return;
@@ -1236,6 +1263,8 @@ function startPipScanning(mainState, mainVideo, pipVideo) {
 
 function stopScanning(state) {
     state.scanGeneration = (state.scanGeneration || 0) + 1;
+    cancelScanRequests(state.scanVideo);
+    state.scanVideo = null;
     if (state.scanInterval) {
         clearTimeout(state.scanInterval);
         state.scanInterval = null;
