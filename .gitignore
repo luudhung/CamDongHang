@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.vercel/
+.env*
+!.env.example
+*.tsbuildinfo
+public/studio/bridge.js
+test-results/
+playwright-report/
+
+.vercel

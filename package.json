@@ -1,0 +1,28 @@
+{
+  "name": "camdonghang-web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "prepare:studio": "esbuild src/studio/bridge.ts --bundle --minify --format=iife --target=es2022 --outfile=public/studio/bridge.js",
+    "dev": "npm run prepare:studio && next dev",
+    "build": "npm run prepare:studio && next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test-storage.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.117.3",
+    "idb": "8.0.4",
+    "next": "16.4.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "esbuild": "0.28.2",
+    "fake-indexeddb": "^6.2.5",
+    "typescript": "~5.9.3"
+  }
+}

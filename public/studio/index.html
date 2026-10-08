@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CamĐóngHàng</title>
+    <!-- PWA icons (cho app mode) -->
+    <meta name="theme-color" content="#1e2a3a">
+    <link rel="stylesheet" href="styles.css">
+    <!-- Google Fonts -->
+    <!-- Barcode decoding runs in scanner-worker.js with local WASM. -->
+
+</head>
+
+<body>
+    <div class="header">
+        <h1>CamĐóngHàng</h1>
+        <div class="header-buttons">
+            <div class="quick-search-container">
+                <input type="text" id="header-quick-search" placeholder="🔍 Tìm nhanh vận đơn...">
+            </div>
+            <button id="videos-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Videos</button>
+            <button id="statistics-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg> Thống kê</button>
+            <button id="settings-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Cài đặt</button>
+            <button id="refresh-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh</button>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="settings-modal">
+        <div class="settings-content">
+            <div class="settings-header">
+                <h2>Cài đặt</h2>
+                <button id="close-settings" class="close-btn">&times;</button>
+            </div>
+
+            <div class="settings-body">
+                <!-- Chế độ đóng gói nhanh -->
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-label">Chế độ đóng gói nhanh</div>
+                        <div class="setting-description">Tự động kết thúc khi quét vận đơn mới</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="auto-switch">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <!-- Ghi hình thêm -->
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-label">Ghi hình thêm</div>
+                        <div class="setting-description">Thời gian ghi hình thêm trước khi lưu video</div>
+                    </div>
+                    <div class="setting-input">
+                        <input type="number" id="extra-recording" value="4" min="0" max="60">
+                        <span class="input-unit">giây</span>
+                    </div>
+                </div>
+
+                <!-- Ghi âm thanh -->
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-label">Ghi âm thanh</div>
+                        <div class="setting-description">Ghi âm từ microphone của camera chính</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="record-audio">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <!-- Tần số quét -->
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-label">Tần số quét mã vận đơn (ms)</div>
+                        <div class="setting-description">Tốc độ quét QR/Barcode. Thấp hơn = nhạy hơn nhưng ngốn CPU. Khuyến nghị 300ms; khi quay tự giãn tối thiểu 400ms để ưu tiên video</div>
+                    </div>
+                    <div class="setting-input">
+                        <input type="number" id="scan-frequency" value="200" min="100" max="1000" step="50">
+                        <span class="input-unit">ms</span>
+                    </div>
+                </div>
+
+                <!-- Time Offset -->
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-label">Điều chỉnh thời gian</div>
+                        <div class="setting-description">Chỉnh dấu thời gian trong video (để trống = thời
+                            gian thực)</div>
+                    </div>
+                    <div class="setting-input">
+                        <input type="datetime-local" id="time-offset" value="">
+                    </div>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <div class="setting-label">Kích thước cam phụ</div>
+                        <div class="setting-description">Kích thước cam phụ (10-100%)</div>
+                    </div>
+                    <div class="setting-input">
+                        <input type="number" id="pip-scale" value="35" min="10" max="100">
+                        <span class="input-unit">%</span>
+                    </div>
+                </div>
+                <!-- Employee Management Section -->
+                <div class="setting-section">
+                    <h3>Quản lý nhân viên</h3>
+                    <div class="employee-status">Chưa có nhân viên</div>
+                    <div class="employee-input-group">
+                        <input type="text" id="employee-name-input" placeholder="Nhập tên nhân viên">
+                        <button id="add-employee-btn" class="add-btn">Add</button>
+                    </div>
+                    <div id="employee-list" class="employee-list"></div>
+                </div>
+
+
+
+                <p class="developer-credit">Phát triển bởi @luudhung</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Modal -->
+    <div id="statistics-modal" class="statistics-modal">
+        <div class="statistics-content">
+            <div class="statistics-header">
+                <h2>Thống kê hiệu suất</h2>
+                <button id="close-statistics" class="close-btn">&times;</button>
+            </div>
+
+            <div class="statistics-body">
+                <div class="statistics-filter">
+                    <div class="filter-group">
+                        <label>Từ ngày:</label>
+                        <input type="date" id="stats-start-date" class="date-input">
+                    </div>
+
+                    <div class="filter-group">
+                        <label>Đến ngày:</label>
+                        <input type="date" id="stats-end-date" class="date-input">
+                    </div>
+
+                    <div class="filter-group">
+                        <label>Nhân viên / Camera:</label>
+                        <select id="stats-employee-filter" class="filter-select">
+                            <option value="all">Tất cả</option>
+                        </select>
+                    </div>
+
+                    <button id="refresh-stats-btn" class="refresh-stats-btn">
+                        🔄 Xem
+                    </button>
+
+                    <button id="export-excel-btn" class="export-excel-btn">
+                        ⬇️ Xuất Excel
+                    </button>
+                </div>
+
+                <div class="search-box">
+                    <input type="text" id="search-tracking-code" placeholder="Nhập mã vận đơn để tìm kiếm...">
+                    <button id="search-btn">🔍 Tìm</button>
+                </div>
+
+                <div class="stats-cards">
+                    <div class="stat-card">
+                        <div class="stat-icon">📹</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="total-videos">0</div>
+                            <div class="stat-label">Tổng số video</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">📦</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="normal-orders">0</div>
+                            <div class="stat-label">Đơn hàng gửi</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card return-card">
+                        <div class="stat-icon">↩️</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="return-orders">0</div>
+                            <div class="stat-label">Đơn hoàn</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">👤</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="active-cameras">0</div>
+                            <div class="stat-label">Nhân viên / Cam</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">⏱️</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="avg-duration">--</div>
+                            <div class="stat-label">Thời gian quay TB</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="camera-stats-section">
+                    <h3>Hiệu suất chi tiết</h3>
+                    <table class="camera-stats-table">
+                        <thead>
+                            <tr>
+                                <th>Nhân viên / Camera</th>
+                                <th>Đơn gửi</th>
+                                <th>Đơn hoàn</th>
+                                <th>Số video</th>
+                                <th>TG TB</th>
+                            </tr>
+                        </thead>
+                        <tbody id="camera-stats-tbody">
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="search-results" class="search-results" style="display: none;">
+                    <h3>Kết quả tìm kiếm</h3>
+                    <div id="search-results-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Videos Modal -->
+    <div id="videos-modal" class="videos-modal">
+        <div class="videos-content">
+            <div class="statistics-header">
+                <h2>📁 Quản lý Videos</h2>
+                <button class="close-btn" id="close-videos">✕</button>
+            </div>
+            <div class="statistics-body">
+                <div class="videos-toolbar">
+                    <div class="videos-toolbar-info">
+                        <span id="videos-selected-count">0 video được chọn</span>
+                        <span id="videos-selected-size"></span>
+                    </div>
+                    <div class="videos-toolbar-actions">
+                    </div>
+                </div>
+                <div id="videos-list" class="videos-list">
+                    <div style="text-align:center; padding:40px; color:var(--text-secondary);">Đang tải danh sách video...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="camera-grid" class="camera-grid">
+        <!-- Cameras will be injected here -->
+    </div>
+
+    <div id="status-message" class="status-message">Đang nhận diện camera…</div>
+
+    <script src="bridge.js"></script>
+</body>
+
+</html>
