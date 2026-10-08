@@ -3,8 +3,8 @@ import path from 'node:path';
 const source=process.argv[2]||'F:/CamDongHang/public';
 const target=path.resolve('public/studio');
 fs.mkdirSync(target,{recursive:true});
-for(const file of ['styles.css','scanner-worker.js'])fs.copyFileSync(path.join(source,file),path.join(target,file));
-for(const folder of ['sounds','vendor'])fs.cpSync(path.join(source,folder),path.join(target,folder),{recursive:true});
+for(const file of ['styles.css','scanner-worker.js','setup-guide.html','setup-guide.css','setup-guide.js'])fs.copyFileSync(path.join(source,file),path.join(target,file));
+for(const folder of ['sounds','vendor','guide'])fs.cpSync(path.join(source,folder),path.join(target,folder),{recursive:true});
 let html=fs.readFileSync(path.join(source,'index.html'),'utf8');
 html=html.replace('<html lang="en">','<html lang="vi">').replace(/    <script>[\s\S]*?<\/script>/,'');
 html=html.replace(/    <link[^\n]*href="\/public\/[^\n]*\n/g,'');
@@ -14,6 +14,7 @@ const start=html.indexOf('                <!-- WhatsApp Bot Section -->'),end=ht
 if(start<0||end<start)throw new Error('Studio markup changed: inspect settings before importing.');
 html=html.slice(0,start)+html.slice(end);
 html=html.replace('<script src="script.js"></script>','<script src="bridge.js"></script>');
+html=html.replace('    <script src="setup-guide-host.js"></script>','');
 html=html.replace('Loading cameras...','Đang nhận diện camera…');
 html=html.replace('</head>','<style>body > .header{display:none!important}</style></head>');
 fs.writeFileSync(path.join(target,'index.html'),html);

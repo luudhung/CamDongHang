@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hướng dẫn setup · CamDongHang</title>
+  <link rel="stylesheet" href="setup-guide.css">
+  <script src="setup-guide.js" defer></script>
+</head>
+<body>
+  <main class="guide">
+    <header class="guide-head">
+      <a class="guide-brand" href="#"><span>◉</span><div>CamDongHang<small>BẮT ĐẦU TRONG VÀI PHÚT</small></div></a>
+      <button id="guide-close" class="quiet" aria-label="Đóng hướng dẫn">Để sau <span aria-hidden="true">×</span></button>
+    </header>
+    <div class="guide-layout">
+      <nav aria-label="Các bước setup" id="guide-steps"></nav>
+      <section class="guide-main" aria-labelledby="step-title">
+        <div class="guide-copy"><span id="step-tag" class="eyebrow"></span><h1 id="step-title" tabindex="-1"></h1><p id="step-summary"></p></div>
+        <div class="guide-visual"><img id="step-image" src="guide/rig.svg" alt=""><div id="step-caption"></div></div>
+        <div id="step-details" class="guide-details"></div>
+        <div id="step-actions" class="guide-actions"></div>
+      </section>
+    </div>
+    <footer class="guide-footer"><div><span id="guide-progress" aria-live="polite"></span><small>← → để chuyển bước · Esc để đóng</small></div><div class="guide-pagination"><button id="guide-back">Quay lại</button><button id="guide-next" class="primary">Tiếp tục <span aria-hidden="true">→</span></button></div></footer>
+  </main>
+</body>
+</html>

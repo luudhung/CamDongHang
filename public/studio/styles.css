@@ -878,6 +878,10 @@ video {
 }
 
 /* === PIP OVERLAY === */
+.setup-guide-shell { width: min(1060px, calc(100vw - 32px)); height: min(790px, calc(100dvh - 32px)); max-width: none; max-height: none; padding: 0; border: 1px solid #365578; border-radius: 20px; overflow: hidden; background: #101823; box-shadow: 0 30px 100px #0009; color: #ecf3fd; }
+.setup-guide-shell::backdrop { background: #020914c9; }
+.setup-guide-shell iframe { display: block; border: 0; width: 100%; height: 100%; }
+@media(max-width:690px) { .setup-guide-shell { width: calc(100vw - 12px); height: calc(100dvh - 12px); border-radius: 14px; } }
 .scanner-status {
     position: absolute;
     top: 45px;
