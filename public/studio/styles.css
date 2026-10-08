@@ -878,6 +878,24 @@ video {
 }
 
 /* === PIP OVERLAY === */
+.scanner-status {
+    position: absolute;
+    top: 45px;
+    left: 12px;
+    z-index: 8;
+    max-width: calc(100% - 130px);
+    padding: 4px 8px;
+    border-radius: 8px;
+    color: #c6d4e6;
+    background: #08121dcc;
+    font-size: 10px;
+    pointer-events: none;
+}
+.scanner-status[data-state="ready"] { color: #74dfb4; }
+.scanner-status[data-state="error"] { color: #ffb0a8; }
+.camera-label[role="button"] { cursor: grab; user-select: none; }
+.camera-label[role="button"]::before { content: '⠿ '; color: #91bdf7; }
+.camera-label[role="button"]:focus-visible { outline: 2px solid #91bdf7; outline-offset: 2px; }
 
 /* Pointer dragging changes ownership only on release; preview streams keep running. */
 .video-wrapper { cursor: grab; }
@@ -913,6 +931,27 @@ video {
     pointer-events: none;
     z-index: 2000;
 }
+.camera-drag-preview {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 250px;
+    border: 2px solid #79b6ff;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #122033;
+    color: white;
+    box-shadow: 0 14px 44px #0009, 0 0 0 5px #60a5fa24;
+    pointer-events: none;
+    z-index: 2100;
+    will-change: transform;
+    animation: camera-pickup .14s ease-out;
+}
+.camera-drag-preview canvas { display: block; width: 100%; aspect-ratio: 16/9; }
+.camera-drag-preview div { padding: 8px 12px 2px; font-size: 13px; font-weight: 600; }
+.camera-drag-preview small { display: block; padding: 3px 12px 10px; color: #9ac6ff; font-size: 11px; }
+@keyframes camera-pickup { from { opacity: 0; scale: .94; } to { opacity: 1; scale: 1; } }
+@media (prefers-reduced-motion: reduce) { .camera-drag-preview { animation: none; } }
 
 .pip-overlay {
     position: absolute;

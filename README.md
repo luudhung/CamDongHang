@@ -114,3 +114,26 @@ Bấm **Reset bố cục** để tách toàn bộ camera thành các ô riêng (
 4 cam → 4 ô). Reset chỉ xóa cách ghép đã nhớ, giữ nguyên độ phân giải và nhân viên;
 không xin lại quyền camera hoặc mở lại luồng. Refresh làm mới danh sách thiết bị
 và giữ cách ghép đã lưu. Dừng quay trước khi đổi bố cục hoặc Reset.
+
+### Đổi vị trí các ô camera
+
+Giữ chuột trên **nhãn “⠿ Camera 1”** rồi kéo thả lên ô camera khác để đổi vị trí
+trái/phải. Cặp chính–phụ được giữ nguyên: ví dụ cặp 1–2 đổi chỗ với cặp 3–4.
+Kéo trên phần hình (không kéo nhãn) vẫn dùng để ghép camera phụ. Có thể chọn
+nhãn bằng Tab rồi nhấn mũi tên trái/phải. Ứng dụng nhớ thứ tự hiển thị; Reset
+bố cục tách các cặp và đưa camera về thứ tự ban đầu. Dừng quay các camera
+liên quan trước khi đổi vị trí.
+
+### Kiểm tra bộ đọc mã
+
+Mỗi ô camera hiển thị **“QR / mã vạch sẵn sàng”** khi bộ đọc đã bật. Đọc được
+QR và các mã vạch vận đơn thông dụng như Code128, Code39, ITF, EAN/UPC.
+Chọn **Hàng hoàn** trước khi đưa mã vào camera. Mã đã có video vẫn được quay
+lại; cảnh báo trùng đơn chỉ nhắc, không chặn ghi hình. Nếu bộ đọc báo lỗi tải,
+bấm Refresh để khởi động lại.
+
+Bấm **Nhập mã** trên ô camera, gõ vận đơn rồi Enter để bắt đầu quay thủ công.
+Chức năng dùng được cả cam đơn lẫn cặp chính–phụ; chọn Hàng gửi/Hàng hoàn
+trước khi nhập. Với nhãn nhiệt có mã vạch Code128 ngắn, bộ đọc tự thử chế độ
+tăng cường sau các lần chưa nhận; kết quả tăng cường phải khớp trên hai khung
+hình. Lúc kéo camera có ảnh thu nhỏ đi theo con trỏ và ô nhận được viền sáng.

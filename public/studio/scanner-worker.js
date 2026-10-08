@@ -54,9 +54,28 @@ self.addEventListener('message', async ({ data: message }) => {
             tryInvert: !!thorough,
             maxNumberOfSymbols: 8
         });
-        const result = selectScanResult(results);
+        let result = selectScanResult(results);
+        let requiresConfirmation = false;
+        if (!result && thorough) {
+            // Some thermal labels (including TikTok Hỏa tốc) have very short
+            // Code128 bars. Keep checksum validation, but allow one intact line.
+            // The camera loop confirms this fallback on a second captured frame.
+            let thinBars = await ZXingWASM.readBarcodesFromImageData(imageData, {
+                formats: ['Code128'], tryHarder: true, tryRotate: true,
+                tryInvert: true, minLineCount: 1, maxNumberOfSymbols: 4
+            });
+            result = selectScanResult(thinBars);
+            if (!result) {
+                thinBars = await ZXingWASM.readBarcodesFromImageData(imageData, {
+                    formats: ['Code128'], tryHarder: true, tryRotate: true,
+                    binarizer: 'FixedThreshold', minLineCount: 1, maxNumberOfSymbols: 4
+                });
+                result = selectScanResult(thinBars);
+            }
+            requiresConfirmation = !!result;
+        }
         self.postMessage({ type: 'result', scanId, code: result ? result.text.trim() : null,
-            format: result?.format, elapsed: performance.now() - started });
+            format: result?.format, requiresConfirmation, elapsed: performance.now() - started });
     } catch (error) {
         self.postMessage({ type: 'error', scanId, error: error.message });
     } finally {

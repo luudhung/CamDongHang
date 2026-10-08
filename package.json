@@ -8,7 +8,7 @@
     "build": "npm run prepare:studio && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/test-storage.mjs && node scripts/test-camera-layout.cjs"
+    "test": "node scripts/test-storage.mjs && node scripts/test-camera-layout.cjs && node scripts/test-scanner-startup.cjs && node scripts/test-scan-confirmation.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.3",

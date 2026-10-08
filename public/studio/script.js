@@ -36,10 +36,13 @@ let workerReady = false;
 let scannerBusy = false;
 let scanIdCounter = 0;
 let scannerRestarts = 0;
+let scannerStartupTimeout = null;
+let scannerStatus = { state: 'loading', message: 'Đang bật đọc QR / mã vạch…' };
 const pendingScans = new Map();
 const scanCanvasCache = new WeakMap();
 const scanPasses = new WeakMap();
 const scanMisses = new WeakMap();
+const scanConfirmations = new WeakMap();
 const scannerWaiters = [];
 
 function clearScannerWaiters() {
@@ -52,21 +55,45 @@ function cancelScanRequests(video) {
     }
 }
 
+function setScannerStatus(state, message) {
+    scannerStatus = { state, message };
+    document.querySelectorAll('.scanner-status').forEach(node => {
+        node.textContent = message;
+        node.dataset.state = state;
+    });
+    if (state === 'error') showError(`${message} Bấm Refresh để thử lại bộ đọc mã.`);
+}
+
 function initScannerWorker() {
+    clearTimeout(scannerStartupTimeout);
     if (scannerWorker) scannerWorker.terminate();
     workerReady = false;
     scannerBusy = false;
     clearScannerWaiters();
     for (const finish of pendingScans.values()) finish(null);
     pendingScans.clear();
-    const worker = new Worker('scanner-worker.js');
+    setScannerStatus('loading', 'Đang bật đọc QR / mã vạch…');
+    let worker;
+    try { worker = new Worker('scanner-worker.js'); }
+    catch (error) { scannerWorker = null; setScannerStatus('error', `Không bật được bộ đọc mã: ${error.message}`); return; }
     scannerWorker = worker;
+    scannerStartupTimeout = setTimeout(() => {
+        if (scannerWorker !== worker || workerReady) return;
+        worker.terminate();
+        setScannerStatus('error', 'Bộ đọc mã chưa tải xong. Kiểm tra kết nối mạng.');
+    }, 15000);
     worker.addEventListener('message', ({ data }) => {
         if (scannerWorker !== worker) return;
         if (data.type === 'ready') {
+            clearTimeout(scannerStartupTimeout);
             workerReady = true;
+            setScannerStatus('ready', 'QR / mã vạch sẵn sàng');
             console.log('[Scanner] Ready (local WASM)');
         } else if (data.type === 'result' || data.type === 'error') {
+            if (data.type === 'error' && data.scanId === undefined) {
+                clearTimeout(scannerStartupTimeout);
+                setScannerStatus('error', data.error || 'Không tải được bộ đọc mã.');
+            }
             const finish = pendingScans.get(data.scanId);
             if (finish) finish(data.code ? data : null);
             if (data.type === 'error') console.warn('[Scanner]', data.error);
@@ -74,6 +101,8 @@ function initScannerWorker() {
     });
     worker.addEventListener('error', (error) => {
         console.error('[Scanner] Worker failed:', error.message);
+        clearTimeout(scannerStartupTimeout);
+        setScannerStatus('error', `Bộ đọc mã gặp lỗi: ${error.message}`);
         workerReady = false;
         scannerBusy = false;
         clearScannerWaiters();
@@ -121,7 +150,7 @@ async function scanCode(video) {
         let imageData;
         if (typeof createImageBitmap === 'function' && typeof OffscreenCanvas !== 'undefined') {
             bitmap = await createImageBitmap(video, cropX, cropY, cropW, cropH, {
-                resizeWidth: width, resizeHeight: height, resizeQuality: 'low'
+                resizeWidth: width, resizeHeight: height, resizeQuality: thorough ? 'high' : 'low'
             });
         } else {
             const { canvas, context } = getOrCreateScanCanvas(video);
@@ -147,6 +176,7 @@ async function scanCode(video) {
                     workerReady = false;
                     clearScannerWaiters();
                     if (scannerRestarts++ < 3) initScannerWorker();
+                    else setScannerStatus('error', 'Bộ đọc mã phản hồi quá chậm.');
                 }
             }, 2500);
             pendingScans.set(scanId, finish);
@@ -160,8 +190,16 @@ async function scanCode(video) {
                 console.warn('[Scanner] Transfer failed:', error);
             }
         });
-        scanMisses.set(video, result ? 0 : (scanMisses.get(video) || 0) + 1);
-        return result ? result.code : null;
+        let code = result?.code || null;
+        if (result?.requiresConfirmation) {
+            const previous = scanConfirmations.get(video);
+            const now = Date.now();
+            const count = previous?.code === code && now - previous.time < 5000 ? previous.count + 1 : 1;
+            scanConfirmations.set(video, { code, time: now, count });
+            if (count < 2) code = null;
+        } else if (code) scanConfirmations.delete(video);
+        scanMisses.set(video, code ? 0 : (scanMisses.get(video) || 0) + 1);
+        return code;
     } catch (error) {
         console.warn('[Scanner] Frame capture failed:', error);
         return null;
@@ -209,13 +247,11 @@ function initializeSounds() {
     preloadAudio('duplicate.wav');
 }
 
-window.addEventListener('load', async () => {
-
-    // Initialize Web Worker
-    initScannerWorker();
-
-    setTimeout(initializeSounds, 500);
-});
+// The web bridge loads this script after async account/settings setup. At that
+// point window.load has already fired, so a load-only listener never runs.
+// The DOM is present here in both the normal and dynamically injected entry.
+initScannerWorker();
+setTimeout(initializeSounds, 500);
 
 class CameraState {
     constructor(deviceId, cameraIndex) {
@@ -1165,7 +1201,7 @@ function startScanning(state, videoElement) {
 
         const startTime = Date.now();
 
-        if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+        if (videoElement.readyState >= 2) {
             const code = await scanCode(videoElement);
             if (state.scanGeneration !== scanGeneration) return;
 
@@ -1225,7 +1261,7 @@ function startPipScanning(mainState, mainVideo, pipVideo) {
         const startTime = Date.now();
 
         // 3. Thực hiện quét
-        if (pipVideo && pipVideo.readyState >= pipVideo.HAVE_ENOUGH_DATA) {
+        if (pipVideo && pipVideo.readyState >= 2) {
             const code = await scanCode(pipVideo);
             if (mainState.pipState !== scanState || scanState.scanGeneration !== scanGeneration) return;
 
@@ -1254,6 +1290,7 @@ function startPipScanning(mainState, mainVideo, pipVideo) {
 function stopScanning(state) {
     state.scanGeneration = (state.scanGeneration || 0) + 1;
     cancelScanRequests(state.scanVideo);
+    if (state.scanVideo) scanConfirmations.delete(state.scanVideo);
     state.scanVideo = null;
     if (state.scanInterval) {
         clearTimeout(state.scanInterval);
@@ -1325,6 +1362,41 @@ function cameraContainer(deviceId) {
 function cameraLayoutBusy(states) {
     return states.some(state => state && (state.isRecording || state.isStartingRecording ||
         (state.mediaRecorder && state.mediaRecorder.state !== 'inactive')));
+}
+
+function applyCameraOrder(order) {
+    if (!Array.isArray(order)) return;
+    const cards = [...cameraGrid.querySelectorAll('.camera-container')];
+    const rank = new Map(order.map((id, index) => [id, index]));
+    cards.sort((a, b) => (rank.get(a.dataset.deviceId) ?? order.length) - (rank.get(b.dataset.deviceId) ?? order.length));
+    // moveBefore preserves media playback state in browsers that support it.
+    // Keep a fallback for older Chrome/Edge, reusing every existing stream.
+    for (const card of cards) {
+        if (typeof cameraGrid.moveBefore === 'function') cameraGrid.moveBefore(card, null);
+        else cameraGrid.appendChild(card);
+    }
+    if (typeof cameraGrid.moveBefore !== 'function') {
+        cards.forEach(card => card.querySelectorAll('video').forEach(video => {
+            if (video.srcObject) video.play().catch(() => {});
+        }));
+    }
+}
+
+function swapCameraPositions(firstId, secondId) {
+    const first = cameraStates.get(firstId), second = cameraStates.get(secondId);
+    if (!first || !second || first === second || first.masterDeviceId || second.masterDeviceId) return false;
+    if (cameraLayoutBusy([first, second])) {
+        showError('Dừng quay hai camera liên quan trước khi đổi vị trí.');
+        return false;
+    }
+    const order = [...cameraGrid.querySelectorAll('.camera-container')].map(card => card.dataset.deviceId);
+    const a = order.indexOf(firstId), b = order.indexOf(secondId);
+    if (a < 0 || b < 0) return false;
+    [order[a], order[b]] = [order[b], order[a]];
+    applyCameraOrder(order);
+    saveCameraSetting('__layout', 'order', order);
+    statusMessage.style.display = 'none';
+    return true;
 }
 
 // Release only the PiP clone. The original preview stream stays live for Reset.
@@ -1415,6 +1487,9 @@ function resetCameraLayout() {
     }
     cancelCameraDrag();
     cameraStates.forEach(state => { clearTimeout(state.pipRestoreTimeout); releaseCameraPip(state); });
+    const originalOrder = [...cameraStates.values()].sort((a, b) => a.cameraIndex - b.cameraIndex).map(state => state.deviceId);
+    applyCameraOrder(originalOrder);
+    saveCameraSetting('__layout', 'order', originalOrder);
     // Also forget pairs belonging to unplugged devices so they do not return later.
     try {
         const settings = JSON.parse(localStorage.getItem('cameraSettings') || '{}');
@@ -1434,16 +1509,57 @@ function cancelCameraDrag() {
     }
     document.body.classList.remove('camera-dragging');
     document.querySelector('.camera-drag-hint')?.remove();
+    document.querySelector('.camera-drag-preview')?.remove();
     cameraGrid.querySelectorAll('.camera-drag-source, .camera-drop-target').forEach(node => {
         node.classList.remove('camera-drag-source', 'camera-drop-target');
         delete node.dataset.dropHint;
     });
 }
 
+function createCameraDragPreview(drag) {
+    const preview = document.createElement('div');
+    preview.className = 'camera-drag-preview';
+    const canvas = document.createElement('canvas');
+    canvas.width = 320; canvas.height = 180;
+    const context = canvas.getContext('2d', { alpha: false });
+    const source = cameraContainer(drag.sourceId)?.querySelector('.camera-video');
+    context.fillStyle = '#101823'; context.fillRect(0, 0, 320, 180);
+    if (source?.readyState >= 2) {
+        try { context.drawImage(source, 0, 0, 320, 180); } catch (_) { /* Keep the camera label if no frame is available. */ }
+    }
+    const title = document.createElement('div');
+    title.textContent = `Camera ${cameraStates.get(drag.sourceId).cameraIndex + 1}`;
+    const action = document.createElement('small');
+    action.textContent = drag.mode === 'move' ? 'Đang đổi vị trí · giữ cặp chính–phụ' : 'Đang kéo làm cam phụ';
+    preview.append(canvas, title, action);
+    document.body.appendChild(preview);
+    drag.preview = preview;
+}
+
+function positionCameraDragPreview(drag, x, y) {
+    if (!drag.preview) return;
+    const width = drag.preview.offsetWidth || 250, height = drag.preview.offsetHeight || 195;
+    const left = Math.max(8, Math.min(window.innerWidth - width - 8, x + 18));
+    const top = Math.max(8, Math.min(window.innerHeight - height - 8, y + 18));
+    drag.preview.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+}
+
 function cameraDropTarget(x, y, sourceId) {
     const target = document.elementFromPoint(x, y)?.closest('.camera-container');
     const state = target && cameraStates.get(target.dataset.deviceId);
     return state && state.deviceId !== sourceId && !state.masterDeviceId ? target : null;
+}
+
+function finishCameraDrag(event) {
+    const drag = cameraDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const target = drag.active && cameraDropTarget(event.clientX, event.clientY, drag.sourceId);
+    const { sourceId, mode } = drag;
+    cancelCameraDrag();
+    if (target) {
+        if (mode === 'move') swapCameraPositions(sourceId, target.dataset.deviceId);
+        else setCameraPip(target.dataset.deviceId, sourceId);
+    }
 }
 
 function enableCameraDragging(wrapper, deviceId) {
@@ -1454,12 +1570,14 @@ function enableCameraDragging(wrapper, deviceId) {
         const sourceId = event.target.closest('.pip-overlay') ? state?.pipDeviceId : deviceId;
         if (!sourceId) return;
         cancelCameraDrag();
-        cameraDrag = { wrapper, sourceId, pointerId: event.pointerId, x: event.clientX, y: event.clientY, active: false };
+        cameraDrag = { wrapper, sourceId, mode: event.target.closest('.camera-label') ? 'move' : 'pair', pointerId: event.pointerId, x: event.clientX, y: event.clientY, active: false };
         wrapper.setPointerCapture(event.pointerId);
     });
     wrapper.addEventListener('pointermove', event => {
         const drag = cameraDrag;
         if (!drag || drag.wrapper !== wrapper || drag.pointerId !== event.pointerId) return;
+        // Recover if a mouse-up happened outside the document/window.
+        if (event.pointerType === 'mouse' && event.buttons === 0) { finishCameraDrag(event); return; }
         if (!drag.active && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 8) return;
         if (!drag.active) {
             drag.active = true;
@@ -1467,29 +1585,28 @@ function enableCameraDragging(wrapper, deviceId) {
             cameraContainer(drag.sourceId)?.classList.add('camera-drag-source');
             const hint = document.createElement('div');
             hint.className = 'camera-drag-hint';
-            hint.textContent = `Kéo Camera ${cameraStates.get(drag.sourceId).cameraIndex + 1} vào cam chính · Esc để hủy`;
+            hint.textContent = drag.mode === 'move'
+                ? 'Thả lên ô camera khác để đổi vị trí · Giữ nguyên cặp chính–phụ · Esc để hủy'
+                : `Kéo Camera ${cameraStates.get(drag.sourceId).cameraIndex + 1} vào cam chính · Esc để hủy`;
             document.body.appendChild(hint);
+            createCameraDragPreview(drag);
         }
+        positionCameraDragPreview(drag, event.clientX, event.clientY);
         cameraGrid.querySelectorAll('.camera-drop-target').forEach(node => node.classList.remove('camera-drop-target'));
         const target = cameraDropTarget(event.clientX, event.clientY, drag.sourceId);
         if (target) {
-            target.dataset.dropHint = `Thả để ghép Camera ${cameraStates.get(drag.sourceId).cameraIndex + 1} làm cam phụ`;
+            target.dataset.dropHint = drag.mode === 'move' ? 'Thả để đổi vị trí hai ô camera'
+                : `Thả để ghép Camera ${cameraStates.get(drag.sourceId).cameraIndex + 1} làm cam phụ`;
             target.classList.add('camera-drop-target');
         }
         event.preventDefault();
     });
-    wrapper.addEventListener('pointerup', event => {
-        const drag = cameraDrag;
-        if (!drag || drag.wrapper !== wrapper || drag.pointerId !== event.pointerId) return;
-        const target = drag.active && cameraDropTarget(event.clientX, event.clientY, drag.sourceId);
-        const sourceId = drag.sourceId;
-        cancelCameraDrag();
-        if (target) setCameraPip(target.dataset.deviceId, sourceId);
-    });
+    wrapper.addEventListener('pointerup', finishCameraDrag);
     wrapper.addEventListener('pointercancel', cancelCameraDrag);
     wrapper.addEventListener('lostpointercapture', () => { if (cameraDrag?.wrapper === wrapper) cancelCameraDrag(); });
 }
 
+window.addEventListener('pointerup', finishCameraDrag, true);
 window.addEventListener('keydown', event => { if (event.key === 'Escape') cancelCameraDrag(); });
 window.addEventListener('blur', cancelCameraDrag);
 
@@ -1581,7 +1698,24 @@ async function initCameras() {
         const label = document.createElement('div');
         label.className = 'camera-label';
         label.textContent = `Camera ${index + 1}`;
-        label.title = 'Giữ chuột và kéo hình camera này vào camera khác để làm cam phụ';
+        label.title = 'Kéo nhãn này để đổi vị trí ô camera; kéo trên phần hình để ghép cam phụ';
+        label.setAttribute('role', 'button');
+        label.setAttribute('aria-label', `Di chuyển Camera ${index + 1}`);
+        label.tabIndex = 0;
+        label.addEventListener('keydown', event => {
+            if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+            const visible = [...cameraGrid.querySelectorAll('.camera-container')].filter(card => !cameraStates.get(card.dataset.deviceId)?.masterDeviceId);
+            const position = visible.findIndex(card => card.dataset.deviceId === camera.deviceId);
+            const neighbor = visible[position + (event.key === 'ArrowLeft' ? -1 : 1)];
+            if (neighbor) swapCameraPositions(camera.deviceId, neighbor.dataset.deviceId);
+            event.preventDefault();
+        });
+
+        const scannerBadge = document.createElement('div');
+        scannerBadge.className = 'scanner-status';
+        scannerBadge.setAttribute('role', 'status');
+        scannerBadge.dataset.state = scannerStatus.state;
+        scannerBadge.textContent = scannerStatus.message;
 
         const video = document.createElement('video');
         video.className = 'camera-video';
@@ -1623,13 +1757,15 @@ async function initCameras() {
         // --- [MỚI] NÚT BẮT ĐẦU ---
         const startBtn = document.createElement('button');
         startBtn.className = 'start-recording-btn';
-        startBtn.innerHTML = '▶ Bắt đầu'; // Icon Play
+        startBtn.textContent = '⌨ Nhập mã';
+        startBtn.title = 'Nhập mã vận đơn để quay khi QR hoặc mã vạch bị mờ';
 
         // --- [MỚI] INPUT NHẬP MÃ ---
         const manualInput = document.createElement('input');
         manualInput.className = 'manual-code-input';
         manualInput.type = 'text';
         manualInput.placeholder = 'Nhập mã & Enter...';
+        manualInput.setAttribute('aria-label', `Nhập mã vận đơn cho Camera ${index + 1}`);
 
         // 1. Sự kiện khi bấm nút Bắt đầu
         startBtn.addEventListener('click', (e) => {
@@ -1651,7 +1787,8 @@ async function initCameras() {
                     console.log(`[Manual Input] Code entered: ${code}`);
                     // Gọi hàm xử lý như khi quét mã thật
                     // Hàm này sẽ tự lo việc: check trùng, phát âm thanh, start record
-                    await handleCodeDetection(state, code, video);
+                    if (state.isPipMode) await handlePipCodeDetection(state, code, video, pipVideo);
+                    else await handleCodeDetection(state, code, video);
 
                     // Ẩn input sau khi nhập xong
                     manualInput.style.display = 'none';
@@ -1838,6 +1975,7 @@ async function initCameras() {
         videoWrapper.appendChild(duplicateWarning);
         videoWrapper.appendChild(trackingDisplay);
         videoWrapper.appendChild(label);
+        videoWrapper.appendChild(scannerBadge);
         videoWrapper.appendChild(resolutionSelect);
         videoWrapper.appendChild(employeeSelect);
         videoWrapper.appendChild(orderTypeSelect);
@@ -1866,11 +2004,11 @@ async function initCameras() {
             const perf = state.recordingPerformance;
             const cameraLabel = `Camera ${index + 1}` + (state.isRecording && perf ? ` · Vẽ ${perf.renderFps} FPS` : '');
             if (label.textContent !== cameraLabel) label.textContent = cameraLabel;
-            label.title = perf ? `Camera báo: ${perf.sourceFps.toFixed(1)} FPS · ${perf.width}×${perf.height}. FPS vẽ canvas, chưa đo FPS file.` : 'Giữ chuột và kéo camera này vào camera khác để làm cam phụ';
+            label.title = 'Kéo nhãn này để đổi vị trí ô camera; kéo trên phần hình để ghép cam phụ' +
+                (perf ? ` · Camera báo: ${perf.sourceFps.toFixed(1)} FPS · ${perf.width}×${perf.height}. FPS vẽ canvas, chưa đo FPS file.` : '');
             resolutionSelect.disabled = cameraLayoutBusy([state, cameraStates.get(state.masterDeviceId)]);
             pipSelect.disabled = cameraLayoutBusy([state, state.pipState]);
             // Kiểm tra xem camera này có đang bật chế độ PiP không
-            const isPipActive = state.isPipMode;
 
             if (state.isRecording) {
                 recordingIndicator.style.display = 'block';
@@ -1905,13 +2043,7 @@ async function initCameras() {
                 // [THÊM MỚI] Ẩn khi không quay
                 trackingDisplay.style.display = 'none';
                 // [LOGIC MỚI] Xử lý hiển thị nút Bắt đầu
-                if (isPipActive) {
-                    // Nếu đang ở chế độ PiP -> ẨN LUÔN nút bắt đầu và input
-                    // (Để tránh bị video phụ che khuất)
-                    startBtn.style.display = 'none';
-                    manualInput.style.display = 'none';
-                }
-                else if (manualInput.style.display === 'block') {
+                if (manualInput.style.display === 'block') {
                     // Nếu đang nhập liệu -> Ẩn nút bắt đầu
                     startBtn.style.display = 'none';
                 }
@@ -1923,6 +2055,7 @@ async function initCameras() {
         }, 500);
     });
     await Promise.all(streamStarts);
+    applyCameraOrder(getCameraSetting('__layout', 'order'));
     // Restore only after every original stream exists, without a delayed Reset race.
     for (const [mainId, auxiliaryId] of savedPairs) setCameraPip(mainId, auxiliaryId);
     cameraStates.forEach(state => saveCameraSetting(state.deviceId, 'pipDeviceId', state.pipDeviceId));
@@ -1968,6 +2101,7 @@ refreshBtn.addEventListener('click', () => {
         showError('Dừng quay trước khi làm mới danh sách camera.');
         return;
     }
+    if (!workerReady) { scannerRestarts = 0; initScannerWorker(); }
     init();
 });
 document.getElementById('reset-layout-btn')?.addEventListener('click', resetCameraLayout);
