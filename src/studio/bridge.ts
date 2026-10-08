@@ -53,7 +53,8 @@ window.fetch=async(input:RequestInfo|URL,init?:RequestInit)=>{
   }catch(error){return Response.json({error:error instanceof Error?error.message:'Lưu dữ liệu chưa thành công.'},{status:500});}
 };
 async function start(){
-  try{const current=await session();const config=await settings();for(const [key,value]of Object.entries(config)){if(typeof value==='string')localStorage.setItem(key,value);else if(key==='employees')localStorage.setItem(key,JSON.stringify(value));}
+  try{const current=await session();const config=await settings();for(const key of ['autoSwitch','extraRecording','extraRecordingOriginal','scanFrequency','timeOffset','pipScale','recordAudio','employees'])localStorage.removeItem(key);
+    for(const [key,value]of Object.entries(config)){if(typeof value==='string')localStorage.setItem(key,value);else if(key==='employees')localStorage.setItem(key,JSON.stringify(value));}
     cameraOwner=await owner();const cached=await preference<Record<string,unknown>>('cameraSettings',{});localStorage.setItem('cameraSettings',JSON.stringify(cached));
     let lastCameraSettings=localStorage.getItem('cameraSettings');
     setInterval(()=>{const current=localStorage.getItem('cameraSettings');if(current!==lastCameraSettings){lastCameraSettings=current;void setPreference('cameraSettings',JSON.parse(current||'{}'));}
@@ -63,6 +64,14 @@ async function start(){
     if(current){const client=await getClient();client?.auth.onAuthStateChange((_event,next)=>{if((next?.user.id||'guest')!==cameraOwner){parent.postMessage({type:'cam-session-changed'},location.origin);}});}
   }catch(error){console.warn('Chế độ tại máy:',error);}
   const script=document.createElement('script');script.src='/studio/script.js';script.onload=()=>{
+    window.addEventListener('message',event=>{
+      if(event.origin!==location.origin||event.source!==parent||event.data?.type!=='cam-command')return;
+      const ids:Record<string,string>={videos:'videos-btn',statistics:'statistics-btn',settings:'settings-btn',refresh:'refresh-btn'};
+      if(event.data.command==='search'){
+        const input=document.getElementById('header-quick-search') as HTMLInputElement;input.value=String(event.data.query||'');input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+      }else if(ids[event.data.command])document.getElementById(ids[event.data.command])?.click();
+    });
+    parent.postMessage({type:'cam-ready'},location.origin);
     (window as unknown as {downloadVideo:(video:VideoInfo)=>Promise<void>}).downloadVideo=async video=>{
       const row=(await listRecordings()).find(item=>`${item.folder}/${item.filename}`===video.relativePath||item.filename===video.filename);
       if(row){try{downloadBlob(await recordingBlob(row),row.filename);return;}catch{/* Fall back to the remote copy. */}}

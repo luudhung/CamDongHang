@@ -15,6 +15,7 @@ if(start<0||end<start)throw new Error('Studio markup changed: inspect settings b
 html=html.slice(0,start)+html.slice(end);
 html=html.replace('<script src="script.js"></script>','<script src="bridge.js"></script>');
 html=html.replace('Loading cameras...','Đang nhận diện camera…');
+html=html.replace('</head>','<style>body > .header{display:none!important}</style></head>');
 fs.writeFileSync(path.join(target,'index.html'),html);
 let engine=fs.readFileSync(path.join(source,'script.js'),'utf8');
 const controller=engine.indexOf('// 💬 WHATSAPP BOT CONTROLLER');
