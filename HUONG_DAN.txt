@@ -99,3 +99,9 @@ Chức năng dùng được cả cam đơn lẫn cặp chính–phụ; chọn H�
 trước khi nhập. Với nhãn nhiệt có mã vạch Code128 ngắn, bộ đọc tự thử chế độ
 tăng cường sau các lần chưa nhận; kết quả tăng cường phải khớp trên hai khung
 hình. Lúc kéo camera có ảnh thu nhỏ đi theo con trỏ và ô nhận được viền sáng.
+
+### Hướng dẫn setup cho người mới
+
+Nút **Hướng dẫn setup** mở 7 bước có hình vector: bố trí cam trên cao/cam cận mã, kết nối, ghép cam, thẻ QR LEAVEIT, bắt đầu quay, lấy đơn ra và lưu video. Hướng dẫn tự mở lần đầu, ghi nhớ khi đóng; có thể mở lại bất cứ lúc nào khi không quay.
+
+Trong bước **Đặt thẻ LEAVEIT**, mở mẫu để in hoặc tải QR SVG. Thẻ chứa đúng chuỗi `LEAVEIT`: đặt dưới vùng để đơn để đơn che kín QR khi quay, lấy đơn ra để lộ QR và tự dừng. Chữ LEAVEIT in thường không thay thế được QR.
