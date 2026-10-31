@@ -1,16 +1,13 @@
 import {cookies} from 'next/headers';
 import {randomBytes} from 'node:crypto';
 import {requireUser,assertSameOrigin,appOrigin} from '@/lib/server-auth';
-import {seal,unseal,type DriveCredentials} from '@/lib/token-vault';
+import {seal} from '@/lib/token-vault';
 export async function POST(request:Request){try{
   assertSameOrigin(request);const user=await requireUser(request);
-  if(!process.env.GOOGLE_CLIENT_ID||!process.env.GOOGLE_CLIENT_SECRET) return Response.json({error:'Kết nối Google Drive chưa được cấu hình.'},{status:503});
-  const pick=request.headers.get('Content-Type')?.includes('application/json')&&(await request.json()).picker===true;
-  const jar=await cookies();let email:string|undefined;
-  if(pick){const raw=jar.get('cam_drive')?.value;if(!raw)throw new Error('drive_missing');const current=unseal<DriveCredentials>(raw);if(current.uid!==user.id||current.scopeVersion!=='drive-file')throw new Error('drive_mismatch');email=current.email;}
+  if(!process.env.GOOGLE_CLIENT_ID||!process.env.GOOGLE_CLIENT_SECRET||!process.env.GOOGLE_PICKER_API_KEY) return Response.json({error:'Kết nối Google Picker chưa được cấu hình.'},{status:503});
   const state=randomBytes(32).toString('hex');const origin=appOrigin();
-  jar.set('cam_oauth',seal({uid:user.id,state,expiresAt:Date.now()+1800000,...(pick?{mode:'pick',email}:{})}),{httpOnly:true,secure:origin.startsWith('https:'),sameSite:'lax',path:'/api/drive',maxAge:1800});
+  (await cookies()).set('cam_oauth',seal({uid:user.id,state,expiresAt:Date.now()+600000}),{httpOnly:true,secure:origin.startsWith('https:'),sameSite:'lax',path:'/api/drive',maxAge:600});
   const url=new URL('https://accounts.google.com/o/oauth2/v2/auth');
-  url.search=new URLSearchParams({client_id:process.env.GOOGLE_CLIENT_ID,redirect_uri:`${origin}/api/drive/callback`,response_type:'code',scope:pick?'https://www.googleapis.com/auth/drive.file':'openid email https://www.googleapis.com/auth/drive.file',access_type:'offline',prompt:'consent',include_granted_scopes:'false',state,...(pick?{trigger_onepick:'true',allow_folder_selection:'true',mimetypes:'application/vnd.google-apps.folder'}:{})}).toString();
+  url.search=new URLSearchParams({client_id:process.env.GOOGLE_CLIENT_ID,redirect_uri:`${origin}/api/drive/callback`,response_type:'code',scope:'openid email https://www.googleapis.com/auth/drive.file',access_type:'offline',prompt:'consent',include_granted_scopes:'false',state}).toString();
   return Response.json({url:url.toString()},{headers:{'Cache-Control':'no-store'}});
 }catch{return Response.json({error:'Hãy đăng nhập lại trước khi kết nối Drive.'},{status:401});}}
