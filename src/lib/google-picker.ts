@@ -33,16 +33,24 @@ export async function pickDriveFolder():Promise<DriveFolder|null>{
   if(!config.pickerApiKey||!config.pickerAppId)throw new Error('Google Picker chưa được cấu hình trên máy chủ.');
   const view=new picker.DocsView(picker.ViewId.FOLDERS).setIncludeFolders(true).setSelectFolderEnabled(true).setMode(picker.DocsViewMode.LIST);
   return new Promise((resolve,reject)=>{
+    let dialog:{setVisible(visible:boolean):void}|undefined;
+    let timeout:ReturnType<typeof setTimeout>|undefined;
+    const clear=()=>{if(timeout)clearTimeout(timeout);};
+    const fail=(message:string)=>{clear();try{dialog?.setVisible(false);}catch{}reject(new Error(message));};
     try{
-      const dialog=new picker.PickerBuilder().addView(view).setOAuthToken(credentials.accessToken).setDeveloperKey(config.pickerApiKey!).setAppId(config.pickerAppId!).setOrigin(location.origin).setLocale('vi').setCallback(result=>{
-        if(result.action===picker.Action.CANCEL){resolve(null);return;}
-        if(result.action===picker.Action.ERROR){reject(new Error('Google Picker không mở được thư mục. Hãy thử kết nối lại Drive.'));return;}
+      const builder=new picker.PickerBuilder().addView(view).setOAuthToken(credentials.accessToken).setDeveloperKey(config.pickerApiKey!).setAppId(config.pickerAppId!).setLocale('vi').setCallback(result=>{
+        if(result.action===picker.Action.CANCEL){clear();resolve(null);return;}
+        if(result.action===picker.Action.ERROR){fail('Google Picker không mở được thư mục. Hãy thử kết nối lại Drive.');return;}
         if(result.action!==picker.Action.PICKED)return;
         const folder=result.docs?.[0];
-        if(!folder?.id||folder.mimeType!=='application/vnd.google-apps.folder'){reject(new Error('Hãy chọn một thư mục trong My Drive.'));return;}
+        if(!folder?.id||folder.mimeType!=='application/vnd.google-apps.folder'){fail('Hãy chọn một thư mục trong My Drive.');return;}
+        clear();
         resolve({id:folder.id,name:folder.name||'Thư mục Drive',path:folder.id==='root'?'My Drive':folder.name||'Thư mục Drive',grant:'picker'});
-      }).build();
+      });
+      if(window!==window.top)builder.setOrigin(location.origin);
+      dialog=builder.build();
+      timeout=setTimeout(()=>fail('Google Picker không tải được. Hãy thử lại hoặc kiểm tra cài đặt cookie bên thứ ba của Chrome.'),20000);
       dialog.setVisible(true);
-    }catch(error){reject(error);}
+    }catch(error){clear();reject(error);}
   });
 }
