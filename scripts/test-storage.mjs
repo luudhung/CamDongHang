@@ -38,7 +38,9 @@ globalThis.fetch=async(url,options={})=>{
   if(!failedOnce){failedOnce=true;throw new Error('simulated network interruption after partial acceptance');}
   return Response.json({id:'drive-test',webViewLink:'https://drive.google.com/file/d/drive-test/view'});
 };
-await a.chooseDriveFolder('test@example.invalid',{id:'parent-folder',name:'Đóng hàng'});
+await a.chooseDriveFolder('test@example.invalid',{id:'old-parent',name:'Thư mục cũ'});
+assert.equal(await a.selectedDriveFolder('test@example.invalid'),null,'old unrestricted Drive folder must be selected again through Picker');
+await a.chooseDriveFolder('test@example.invalid',{id:'parent-folder',name:'Đóng hàng',grant:'picker'});
 accountA.uploadStatus='queued';await a.updateRecording(accountA);
 await Promise.all([a.runUploadQueue(),b.runUploadQueue()]);
 assert.equal(starts,1,'cross-window lock must prevent duplicate uploads');
