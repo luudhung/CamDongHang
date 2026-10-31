@@ -92,9 +92,9 @@ export async function runUploadQueue(retry=false){
   try{if(navigator.locks){await navigator.locks.request(`camdonghang-upload:${await owner()}`,{ifAvailable:true},async lock=>{if(lock)await process();});}else await process();}finally{queueBusy=false;}
 }
 export async function retryUploads(){await runUploadQueue(true);}
-export type DriveFolder={id:string;name:string;path?:string;grant?:'picker'};
+export type DriveFolder={id:string;name:string;path?:string;grant?:'picker'|'app'};
 function driveQueryValue(value:string){return value.replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
-export async function selectedDriveFolder(email:string){const value=await preference<DriveFolder|string|null>(`driveFolder:${email}`,null);return value&&typeof value==='object'&&typeof value.id==='string'&&typeof value.name==='string'&&value.grant==='picker'?value:null;}
+export async function selectedDriveFolder(email:string){const value=await preference<DriveFolder|string|null>(`driveFolder:${email}`,null);return value&&typeof value==='object'&&typeof value.id==='string'&&typeof value.name==='string'&&(value.grant==='picker'||value.grant==='app')?value:null;}
 export async function chooseDriveFolder(email:string,folder:DriveFolder){await setPreference(`driveFolder:${email}`,folder);}
 async function dailyDriveFolder(parentId:string,day:string,accessToken:string){
   const q=`'${driveQueryValue(parentId)}' in parents and name = '${driveQueryValue(day)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
