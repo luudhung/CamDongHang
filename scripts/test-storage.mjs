@@ -48,12 +48,23 @@ let rows=await a.listRecordings();let uploaded=rows.find(row=>row.id===accountA.
 const second=await b.saveRecording(clip,info);second.uploadStatus='queued';await b.updateRecording(second);
 for(let attempt=0;attempt<10;attempt++){await b.runUploadQueue();if((await b.listRecordings()).find(row=>row.id===second.id)?.uploadStatus==='uploaded')break;await new Promise(resolve=>setTimeout(resolve,25));}
 assert.equal(folderCreates,1,'second machine reuses the existing dated folder');
+await a.setPreference('localSave',false);await a.setPreference('autoDrive',true);
+const downloadsBeforeCloudOnly=downloads.length;
+const cloudOnly=await a.saveRecording(clip,info);
+assert.equal(cloudOnly.cloudOnly,true);assert.equal(downloads.length,downloadsBeforeCloudOnly,'Drive-only mode must not download a local file');
+for(let attempt=0;attempt<10;attempt++){if((await a.listRecordings()).find(row=>row.id===cloudOnly.id)?.uploadStatus==='uploaded')break;await new Promise(resolve=>setTimeout(resolve,25));}
+let cloudOnlyUploaded=(await a.listRecordings()).find(row=>row.id===cloudOnly.id);
+assert.equal(cloudOnlyUploaded.uploadStatus,'uploaded');assert.equal(cloudOnlyUploaded.blob,undefined,'browser backup is released only after Drive confirms the file ID');
 await a.removeCachedVideo(uploaded);assert.equal((await a.listRecordings()).find(row=>row.id===accountA.id).blob,undefined);
 oldOwner.uploadStatus='queued';await a.updateRecording(oldOwner);
 globalThis.fetch=async()=>new Response('capacity error',{status:403});
 await a.runUploadQueue();const failed=(await a.listRecordings()).find(row=>row.id===oldOwner.id);assert.equal(failed.uploadStatus,'error');assert.equal((await a.recordingBlob(failed)).size,clip.size,'upload failure must retain clip');
+const cloudOnlyFailed=await a.saveRecording(clip,info);
+for(let attempt=0;attempt<10;attempt++){if((await a.listRecordings()).find(row=>row.id===cloudOnlyFailed.id)?.uploadStatus==='error')break;await new Promise(resolve=>setTimeout(resolve,25));}
+const failedCloudRow=(await a.listRecordings()).find(row=>row.id===cloudOnlyFailed.id);
+assert.equal(failedCloudRow.uploadStatus,'error');assert.equal(failedCloudRow.blob.size,clip.size,'Drive-only mode retains browser backup if upload fails');
 navigator.onLine=false;await a.retryUploads();assert.equal((await a.listRecordings()).find(row=>row.id===oldOwner.id).uploadStatus,'error');
-const result={localPersistence:'PASS',accountIsolation:'PASS',ownerSnapshot:'PASS',crossWindowUploadLock:'PASS',existingDatedDriveFolder:'PASS',resumablePartialAcceptance:'PASS',uploadFailureRetention:'PASS',cacheReleaseGuard:'PASS',resumableRequests:ranges,uploadSessions:starts,putCount};
+const result={localPersistence:'PASS',accountIsolation:'PASS',ownerSnapshot:'PASS',crossWindowUploadLock:'PASS',existingDatedDriveFolder:'PASS',resumablePartialAcceptance:'PASS',uploadFailureRetention:'PASS',cloudOnlyAfterConfirmation:'PASS',cloudOnlyFailureBackup:'PASS',cacheReleaseGuard:'PASS',resumableRequests:ranges,uploadSessions:starts,putCount};
 await fs.writeFile(new URL('../test-results/storage.json',import.meta.url),JSON.stringify(result,null,2));
 console.log(JSON.stringify(result,null,2));
 // Download URL cleanup timers should not keep this command open.

@@ -1,6 +1,6 @@
 import {openDB,type DBSchema,type IDBPDatabase} from 'idb';
 import {getClient,session,driveToken} from './config';
-export type Recording={id:string;owner:string;filename:string;code:string;cameraId:number;employee:string;duration:number;size:number;mime:string;createdAt:string;folder:string;blob?:Blob;localSaved:boolean;driveId?:string;driveUrl?:string;uploadStatus:'local'|'queued'|'uploading'|'uploaded'|'error';error?:string};
+export type Recording={id:string;owner:string;filename:string;code:string;cameraId:number;employee:string;duration:number;size:number;mime:string;createdAt:string;folder:string;blob?:Blob;localSaved:boolean;cloudOnly?:boolean;driveId?:string;driveUrl?:string;uploadStatus:'local'|'queued'|'uploading'|'uploaded'|'error';error?:string};
 interface LocalDB extends DBSchema {
   recordings:{key:string;value:Recording;indexes:{owner:string}};
   preferences:{key:string;value:unknown};
@@ -32,18 +32,20 @@ export async function chooseDirectory(){
 function safeName(name:string){return name.replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').slice(0,150);}
 export async function saveRecording(blob:Blob,info:{filename:string;code:string;cameraId:number;employee:string;duration:number},recordingOwner?:string){
   const who=recordingOwner??await owner(),now=new Date();
+  const localSave=await(await db()).get('preferences',`${who}:localSave`)!==false;
+  const autoDrive=!!await(await db()).get('preferences',`${who}:autoDrive`);
   const id=crypto.randomUUID();const parts=info.filename.split('.');const ext=parts.pop()||'webm';
   const filename=safeName(`${parts.join('.')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}${now.getSeconds().toString().padStart(2,'0')}_${id.slice(0,6)}.${ext}`);
-  const row:Recording={...info,id,owner:who,filename,size:blob.size,mime:blob.type,createdAt:now.toISOString(),folder:`${String(now.getDate()).padStart(2,'0')}-${String(now.getMonth()+1).padStart(2,'0')}-${now.getFullYear()}`,blob,localSaved:false,uploadStatus:'local'};
+  const row:Recording={...info,id,owner:who,filename,size:blob.size,mime:blob.type,createdAt:now.toISOString(),folder:`${String(now.getDate()).padStart(2,'0')}-${String(now.getMonth()+1).padStart(2,'0')}-${now.getFullYear()}`,blob,localSaved:false,cloudOnly:!localSave&&autoDrive&&who!=='guest',uploadStatus:'local'};
   // Persist before any upload/download: network failures cannot discard a completed clip.
   await updateRecording(row);
   const directory=await(await db()).get('preferences',`${who}:directory`) as DirectoryHandle|null;
-  if(directory){try{
+  if(!row.cloudOnly&&directory){try{
     if(await directory.queryPermission({mode:'readwrite'})!=='granted')throw new Error('Cần cấp lại quyền thư mục lưu.');
     const file=await directory.getFileHandle(filename,{create:true});const writable=await file.createWritable();await writable.write(blob);await writable.close();row.localSaved=true;
   }catch(error){row.error=error instanceof Error?error.message:'Không ghi được vào thư mục.';}}
-  else{downloadBlob(blob,filename);}
-  if(await(await db()).get('preferences',`${who}:autoDrive`)&&who!=='guest')row.uploadStatus='queued';
+  else if(!row.cloudOnly){downloadBlob(blob,filename);}
+  if(autoDrive&&who!=='guest')row.uploadStatus='queued';
   await updateRecording(row);void runUploadQueue();return row;
 }
 export function downloadBlob(blob:Blob,filename:string){const url=URL.createObjectURL(blob);const anchor=document.createElement('a');anchor.href=url;anchor.download=filename;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
@@ -82,7 +84,8 @@ export async function runUploadQueue(retry=false){
   const process=async()=>{if(retry){for(const row of await listRecordings()){if(row.uploadStatus==='error'||row.uploadStatus==='uploading'){row.uploadStatus='queued';await updateRecording(row);}}}
     const rows=await listRecordings();for(const row of rows.filter(item=>item.uploadStatus==='queued')){
     try{row.uploadStatus='uploading';row.error=undefined;await updateRecording(row);
-      const result=await uploadToDrive(row);row.driveId=result.id;row.driveUrl=result.webViewLink||`https://drive.google.com/file/d/${result.id}/view`;row.uploadStatus='uploaded';
+      const result=await uploadToDrive(row);if(!result.id)throw new Error('Drive chưa xác nhận đã lưu video.');row.driveId=result.id;row.driveUrl=result.webViewLink||`https://drive.google.com/file/d/${result.id}/view`;row.uploadStatus='uploaded';
+      if(row.cloudOnly)delete row.blob;
     }catch(error){row.uploadStatus='error';row.error=error instanceof Error?error.message:'Tải Drive chưa thành công.';}
     await updateRecording(row);
   }};
