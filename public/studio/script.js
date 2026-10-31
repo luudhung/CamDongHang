@@ -3144,10 +3144,10 @@ function renderVideosList() {
                         <div class="video-card-name" title="${escapeStudioHtml(video.filename)}">${escapeStudioHtml(cameraLabel)}</div>
                         <div class="video-card-code" title="${escapeStudioHtml(code)}">${escapeStudioHtml(code)}</div>
                     </div>
-                    </div>
-                    <div class="video-card-actions">
-                    </div>
                 </div>
+                    <div class="video-card-actions">
+                        <button type="button" class="video-download-again">⬇ Tải lại</button>
+                    </div>
             `;
 
             // Click thumbnail to open in default player
@@ -3166,6 +3166,10 @@ function renderVideosList() {
                 setTimeout(() => {
                     thumb.querySelector('.video-card-play').textContent = '▶';
                 }, 1500);
+            });
+            item.querySelector('.video-download-again').addEventListener('click', async () => {
+                try { await window.downloadVideo(video); }
+                catch (error) { alert(error instanceof Error ? error.message : 'Không tải lại được video.'); }
             });
 
             itemsContainer.appendChild(item);

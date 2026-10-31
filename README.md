@@ -7,8 +7,8 @@ Website: https://camdonghang.vercel.app
 ## Sử dụng
 
 1. Mở bằng Chrome hoặc Edge trên máy có camera. Cho phép camera khi trình duyệt hỏi.
-2. Vào **Lưu trữ → Chọn thư mục lưu**. Mỗi video được ghi ra thư mục sau khi dừng hoặc chuyển vận đơn. Nếu chưa chọn thư mục, trình duyệt tải video xuống; có thể cần cho phép tải nhiều file.
-3. Đăng nhập Google nếu muốn đồng bộ cài đặt/thông tin video. Chọn **Kết nối Google Drive**, sau đó bật **Tự tải video mới lên Drive**.
+2. Vào **Lưu trữ → Chọn thư mục lưu**. Mỗi video được ghi ra thư mục sau khi dừng hoặc chuyển vận đơn. Nếu chưa chọn thư mục, trình duyệt tải video xuống; có thể cần cho phép tải nhiều file. **Tải tất cả video** cho phép chọn thư mục đích và chép các video còn truy cập được vào thư mục con theo ngày.
+3. Đăng nhập Google nếu muốn đồng bộ cài đặt/thông tin video. Chọn **Kết nối Google Drive → Chọn thư mục trong My Drive**, đi vào thư mục muốn dùng và bấm **Dùng thư mục này**; sau đó bật **Tự tải video mới lên Drive**. Ứng dụng tìm thư mục con `DD-MM-YYYY` dưới thư mục đã chọn, dùng lại nếu có, hoặc tạo mới rồi lưu video vào đó. Máy khác dùng cùng tài khoản Drive và cùng thư mục đích sẽ tìm thấy thư mục ngày đã tạo.
 4. Gắn thêm camera rồi bấm Refresh. Số camera nhận được phụ thuộc thiết bị, quyền trình duyệt và băng thông USB; 4 camera 1080p không bảo đảm 30fps trên mọi máy.
 
 Quay và quét dùng tài nguyên máy người dùng. Vercel cung cấp giao diện và xử lý OAuth; **dữ liệu video không đi qua Vercel/Supabase**. Upload video chạy trực tiếp từ trình duyệt lên Drive của người dùng. Supabase chỉ giữ tài khoản, cài đặt và metadata có RLS theo `auth.uid()`.
@@ -54,7 +54,7 @@ http://localhost:3000/auth/callback
 
 ### Google Cloud / Google Auth Platform
 
-Tên project và Application name trong Branding: **CamDongHang**. Tạo Web OAuth client, bật Drive API, cấu hình External và trạng thái xuất bản phù hợp. Các scope sử dụng: `openid`, `email`, `profile` cho đăng nhập; thêm `https://www.googleapis.com/auth/drive.file` khi kết nối Drive. Không xin quyền đọc toàn bộ Drive.
+Tên project và Application name trong Branding: **CamDongHang**. Tạo Web OAuth client, bật Drive API, cấu hình External và trạng thái xuất bản phù hợp. Các scope sử dụng: `openid`, `email`, `profile` cho đăng nhập; kết nối Drive yêu cầu `https://www.googleapis.com/auth/drive` để liệt kê thư mục có sẵn trong My Drive và ghi video vào thư mục người dùng chọn. Đây là scope hạn chế của Google và có thể cần xác minh ứng dụng trước khi dùng rộng rãi. Người dùng đã kết nối bằng scope cũ cần bấm **Kết nối lại** để cấp quyền mới.
 
 Authorized redirect URIs:
 

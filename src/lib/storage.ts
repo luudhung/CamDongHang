@@ -22,7 +22,7 @@ export async function syncMetadata(row:Recording){
   if(error) throw error;
 }
 export async function updateRecording(row:Recording){await(await db()).put('recordings',row);window.dispatchEvent(new Event('cam-recordings-changed'));void syncMetadata(row).catch(error=>console.warn('Chưa đồng bộ thông tin video:',error.message));}
-export type DirectoryHandle={name:string;queryPermission(options:{mode:string}):Promise<string>;requestPermission(options:{mode:string}):Promise<string>;getFileHandle(name:string,options?:{create:boolean}):Promise<{createWritable():Promise<{write(blob:Blob):Promise<void>;close():Promise<void>}>;getFile():Promise<File>}>};
+export type DirectoryHandle={name:string;queryPermission(options:{mode:string}):Promise<string>;requestPermission(options:{mode:string}):Promise<string>;getDirectoryHandle(name:string,options?:{create:boolean}):Promise<DirectoryHandle>;getFileHandle(name:string,options?:{create:boolean}):Promise<{createWritable():Promise<{write(blob:Blob):Promise<void>;close():Promise<void>}>;getFile():Promise<File>}>};
 export async function chooseDirectory(){
   const picker=(window as unknown as {showDirectoryPicker?:(options:{mode:string})=>Promise<DirectoryHandle>}).showDirectoryPicker;
   if(!picker)throw new Error('Trình duyệt này chưa hỗ trợ chọn thư mục. Dùng Chrome/Edge hoặc tải video bằng nút Tải xuống.');
@@ -50,8 +50,27 @@ export function downloadBlob(blob:Blob,filename:string){const url=URL.createObje
 export async function recordingBlob(row:Recording):Promise<Blob>{
   if(row.blob)return row.blob;
   const directory=await preference<DirectoryHandle|null>('directory',null);
-  if(directory)return(await directory.getFileHandle(row.filename)).getFile();
+  if(directory){
+    try{
+      if(await directory.queryPermission({mode:'readwrite'})!=='granted'&&await directory.requestPermission({mode:'readwrite'})!=='granted')throw new Error('Cần cấp lại quyền thư mục lưu trên máy.');
+      return(await directory.getFileHandle(row.filename)).getFile();
+    }catch(error){if(!row.driveId)throw error;}
+  }
+  if(row.driveId)return driveRecordingBlob(row.driveId);
   throw new Error('Video nằm trên máy đã quay. Mở liên kết Drive nếu đã tải lên.');
+}
+export async function driveRecordingBlob(fileId:string){
+  const {accessToken}=await driveToken();const response=await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,{headers:{Authorization:`Bearer ${accessToken}`}});
+  if(!response.ok)throw new Error('Không tải lại được video từ Drive. Hãy kiểm tra quyền và file trên Drive.');
+  return response.blob();
+}
+export async function downloadAllRecordings(onProgress:(done:number,total:number)=>void){
+  const rows=await listRecordings();if(!rows.length)throw new Error('Trình duyệt này chưa có video để tải.');
+  const picker=(window as unknown as {showDirectoryPicker?:(options:{mode:string})=>Promise<DirectoryHandle>}).showDirectoryPicker;
+  if(!picker)throw new Error('Hãy dùng Chrome hoặc Edge để chọn thư mục tải tất cả video.');
+  const target=await picker({mode:'readwrite'});let done=0;const failed:string[]=[];
+  for(const row of rows){try{const blob=await recordingBlob(row);const day=await target.getDirectoryHandle(row.folder,{create:true});const file=await day.getFileHandle(row.filename,{create:true});const writable=await file.createWritable();await writable.write(blob);await writable.close();done++;}catch{failed.push(row.filename);}onProgress(done,rows.length);}
+  return {done,total:rows.length,failed};
 }
 export async function removeCachedVideo(row:Recording){
   if(!row.localSaved&&!row.driveId)throw new Error('Hãy lưu ra thư mục hoặc tải lên Drive trước khi giải phóng bản dự phòng.');
@@ -70,11 +89,45 @@ export async function runUploadQueue(retry=false){
   try{if(navigator.locks){await navigator.locks.request(`camdonghang-upload:${await owner()}`,{ifAvailable:true},async lock=>{if(lock)await process();});}else await process();}finally{queueBusy=false;}
 }
 export async function retryUploads(){await runUploadQueue(true);}
+export type DriveFolder={id:string;name:string};
+function driveQueryValue(value:string){return value.replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
+export async function listDriveFolders(parentId='root'):Promise<DriveFolder[]>{
+  const {accessToken}=await driveToken();
+  const q=`'${driveQueryValue(parentId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const folders:DriveFolder[]=[];let pageToken='';
+  do{
+    const params=new URLSearchParams({q,fields:'nextPageToken,files(id,name)',pageSize:'1000',spaces:'drive'});
+    if(pageToken)params.set('pageToken',pageToken);
+    const response=await fetch(`https://www.googleapis.com/drive/v3/files?${params}`,{headers:{Authorization:`Bearer ${accessToken}`},cache:'no-store'});
+    if(!response.ok)throw new Error(response.status===403?'Hãy kết nối lại Google Drive để cấp quyền chọn thư mục.':'Không đọc được thư mục trên My Drive.');
+    const data=await response.json();folders.push(...(data.files||[]));pageToken=data.nextPageToken||'';
+  }while(pageToken);
+  return folders.sort((a,b)=>a.name.localeCompare(b.name,'vi'));
+}
+export async function selectedDriveFolder(email:string){const value=await preference<DriveFolder|string|null>(`driveFolder:${email}`,null);return value&&typeof value==='object'&&typeof value.id==='string'&&typeof value.name==='string'?value:null;}
+export async function chooseDriveFolder(email:string,folder:DriveFolder){await setPreference(`driveFolder:${email}`,folder);}
+async function dailyDriveFolder(parentId:string,day:string,accessToken:string){
+  const q=`'${driveQueryValue(parentId)}' in parents and name = '${driveQueryValue(day)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const find=async()=>{
+    const params=new URLSearchParams({q,fields:'nextPageToken,files(id,name,createdTime)',pageSize:'1000',spaces:'drive'});
+    const found:{id:string;createdTime?:string}[]=[];let pageToken='';
+    do{if(pageToken)params.set('pageToken',pageToken);const response=await fetch(`https://www.googleapis.com/drive/v3/files?${params}`,{headers:{Authorization:`Bearer ${accessToken}`},cache:'no-store'});
+      if(!response.ok)throw new Error(response.status===403?'Hãy kết nối lại Google Drive để cấp quyền thư mục.':'Không kiểm tra được thư mục ngày trên Drive.');
+      const data=await response.json();found.push(...(data.files||[]));pageToken=data.nextPageToken||'';
+    }while(pageToken);
+    return found.sort((a,b)=>(a.createdTime||'').localeCompare(b.createdTime||'')||a.id.localeCompare(b.id))[0]?.id;
+  };
+  const existing=await find();if(existing)return existing;
+  const response=await fetch('https://www.googleapis.com/drive/v3/files?fields=id',{method:'POST',headers:{Authorization:`Bearer ${accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({name:day,mimeType:'application/vnd.google-apps.folder',parents:[parentId]})});
+  if(!response.ok)throw new Error('Không tạo được thư mục ngày trên Drive.');
+  const created=(await response.json()).id as string;
+  return await find()||created;
+}
 async function uploadToDrive(row:Recording):Promise<{id:string;webViewLink?:string}>{
   const blob=await recordingBlob(row);let credentials=await driveToken();
-  const folderKey=`driveFolder:${credentials.email}`;let folderId=await preference<string|null>(folderKey,null);
-  if(!folderId){const response=await fetch('https://www.googleapis.com/drive/v3/files?fields=id',{method:'POST',headers:{Authorization:`Bearer ${credentials.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({name:'CamDongHang',mimeType:'application/vnd.google-apps.folder'})});
-    if(!response.ok)throw new Error('Không tạo được thư mục CamDongHang trên Drive.');folderId=(await response.json()).id;await setPreference(folderKey,folderId);}
+  const selected=await selectedDriveFolder(credentials.email);
+  if(!selected)throw new Error('Hãy chọn thư mục trong My Drive trước khi tải video.');
+  const folderId=await dailyDriveFolder(selected.id,row.folder,credentials.accessToken);
   const start=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink',{method:'POST',headers:{Authorization:`Bearer ${credentials.accessToken}`,'Content-Type':'application/json','X-Upload-Content-Type':row.mime,'X-Upload-Content-Length':String(blob.size)},body:JSON.stringify({name:row.filename,parents:[folderId],appProperties:{recordingId:row.id}})});
   if(!start.ok)throw new Error('Không bắt đầu được upload Drive. Hãy kiểm tra kết nối và dung lượng Drive.');
   const uploadUrl=start.headers.get('Location');if(!uploadUrl)throw new Error('Drive không trả về phiên tải video.');

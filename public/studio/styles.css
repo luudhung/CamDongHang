@@ -1952,6 +1952,17 @@ video {
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
+    padding: 0 10px 10px;
+}
+
+.video-download-again {
+    padding: 5px 9px;
+    border: 1px solid var(--accent-blue);
+    border-radius: var(--radius-sm);
+    background: rgba(10, 132, 255, 0.14);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.75rem;
 }
 
 .video-card-status {

@@ -1,16 +1,16 @@
 import {getClient,session} from '../lib/config';
-import {owner,preference,setPreference,saveRecording,listRecordings,recordingBlob,downloadBlob,runUploadQueue,type Recording} from '../lib/storage';
+import {owner,preference,setPreference,saveRecording,listRecordings,recordingBlob,driveRecordingBlob,downloadBlob,runUploadQueue,type Recording} from '../lib/storage';
 const nativeFetch=window.fetch.bind(window);
 let cameraOwner='guest';
 type VideoInfo=Record<string,unknown>;
 function escapeHtml(value:unknown){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]!));}
-function info(row:Recording):VideoInfo{return {filename:row.filename,code:escapeHtml(row.code),cameraId:row.cameraId,employee:escapeHtml(row.employee),duration:row.duration,size:row.size,timestamp:row.createdAt,folder:row.folder,orderType:row.filename.includes('_Return')?'return':'normal',uploaded:!!row.driveId,googleDriveLink:row.driveUrl,relativePath:`${row.folder}/${row.filename}`};}
+function info(row:Recording):VideoInfo{return {filename:row.filename,code:escapeHtml(row.code),cameraId:row.cameraId,employee:escapeHtml(row.employee),duration:row.duration,size:row.size,timestamp:row.createdAt,folder:row.folder,orderType:row.filename.includes('_Return')?'return':'normal',uploaded:!!row.driveId,driveId:row.driveId,googleDriveLink:row.driveUrl,relativePath:`${row.folder}/${row.filename}`};}
 async function allVideos(){
   const rows=await listRecordings();const result=new Map(rows.map(row=>[row.id,info(row)]));
   const client=await getClient(),current=await session();
   if(client&&current){const {data}=await client.from('recordings').select('*').eq('user_id',current.user.id).order('created_at',{ascending:false}).limit(1000);
     for(const item of data||[]){if(result.has(item.id))continue;const date=new Date(item.created_at);const folder=`${String(date.getDate()).padStart(2,'0')}-${String(date.getMonth()+1).padStart(2,'0')}-${date.getFullYear()}`;
-      result.set(item.id,{filename:item.filename,code:escapeHtml(item.code),cameraId:item.camera_id,employee:escapeHtml(item.employee),duration:item.duration,size:item.size,timestamp:item.created_at,folder,orderType:item.filename.includes('_Return')?'return':'normal',uploaded:!!item.drive_file_id,googleDriveLink:item.drive_url,relativePath:`${folder}/${item.filename}`});}}
+      result.set(item.id,{filename:item.filename,code:escapeHtml(item.code),cameraId:item.camera_id,employee:escapeHtml(item.employee),duration:item.duration,size:item.size,timestamp:item.created_at,folder,orderType:item.filename.includes('_Return')?'return':'normal',uploaded:!!item.drive_file_id,driveId:item.drive_file_id,googleDriveLink:item.drive_url,relativePath:`${folder}/${item.filename}`});}}
   return [...result.values()];
 }
 async function settings(){const cached=await preference<Record<string,unknown>>('settings',{}),client=await getClient(),current=await session();if(client&&current){const {data,error}=await client.from('user_settings').select('settings').eq('user_id',current.user.id).maybeSingle();if(!error&&data){await setPreference('settings',data.settings);return data.settings;}}return cached;}
@@ -18,8 +18,12 @@ async function openVideo(relativePath:string){const local=(await listRecordings(
   const dialog=document.createElement('dialog');dialog.style.cssText='width:min(900px,90vw);background:#101722;color:white;border:1px solid #334155;border-radius:16px';
   const close=document.createElement('button');close.textContent='Đóng';close.onclick=()=>dialog.close();dialog.append(close);
   let url:string|undefined;
-  if(local){try{url=URL.createObjectURL(await recordingBlob(local));const video=document.createElement('video');video.src=url;video.controls=true;video.autoplay=true;video.style.cssText='display:block;width:100%;max-height:75vh';dialog.append(video);}catch{/* Drive fallback below */}}
-  if(!url){const video=(await allVideos()).find(row=>row.relativePath===relativePath);const link=document.createElement('a');if(video?.googleDriveLink){link.href=String(video.googleDriveLink);link.target='_blank';link.rel='noopener';link.textContent='Mở video trên Google Drive';}else link.textContent='Video này nằm trên máy đã quay. Mở mục Lưu trữ trên máy đó để tải xuống.';dialog.append(link);}
+  const remote=(await allVideos()).find(row=>row.relativePath===relativePath);
+  try{const blob=local?await recordingBlob(local):remote?.driveId?await driveRecordingBlob(String(remote.driveId)):null;
+    if(blob){url=URL.createObjectURL(blob);const video=document.createElement('video');video.src=url;video.controls=true;video.autoplay=true;video.style.cssText='display:block;width:100%;max-height:75vh';dialog.append(video);}}
+  catch(error){const message=document.createElement('p');message.textContent=error instanceof Error?error.message:'Không đọc được video.';dialog.append(message);}
+  if(!url){const link=document.createElement('a');if(remote?.googleDriveLink){link.href=String(remote.googleDriveLink);link.target='_blank';link.rel='noopener';link.textContent='Mở video trên Google Drive';}else link.textContent='Không tìm thấy file video trên máy này hoặc Drive. Hãy kiểm tra máy đã quay.';dialog.append(link);}
+  if(local||remote?.driveId){const retry=document.createElement('button');retry.textContent='Tải lại video';retry.onclick=async()=>{try{const blob=local?await recordingBlob(local):await driveRecordingBlob(String(remote!.driveId));downloadBlob(blob,String(remote?.filename||local?.filename));}catch(error){alert(error instanceof Error?error.message:'Không tải lại được video.');}};dialog.append(retry);}
   dialog.onclose=()=>{if(url)URL.revokeObjectURL(url);dialog.remove();};document.body.append(dialog);dialog.showModal();
 }
 window.fetch=async(input:RequestInfo|URL,init?:RequestInit)=>{
@@ -74,8 +78,9 @@ async function start(){
     parent.postMessage({type:'cam-ready'},location.origin);
     (window as unknown as {downloadVideo:(video:VideoInfo)=>Promise<void>}).downloadVideo=async video=>{
       const row=(await listRecordings()).find(item=>`${item.folder}/${item.filename}`===video.relativePath||item.filename===video.filename);
-      if(row){try{downloadBlob(await recordingBlob(row),row.filename);return;}catch{/* Fall back to the remote copy. */}}
-      if(video.relativePath)await openVideo(String(video.relativePath));else alert('Video nằm trên máy đã quay.');
+      if(row){downloadBlob(await recordingBlob(row),row.filename);return;}
+      if(video.driveId){downloadBlob(await driveRecordingBlob(String(video.driveId)),String(video.filename));return;}
+      throw new Error('Không tìm thấy file video trên máy này hoặc Drive.');
     };
   };document.body.append(script);
   window.addEventListener('online',()=>void runUploadQueue());void runUploadQueue();
