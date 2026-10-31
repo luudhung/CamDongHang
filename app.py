@@ -30,6 +30,7 @@ import signal
 import re as _re
 import traceback
 import argparse
+import zipfile
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -981,6 +982,18 @@ def load_stats(folder_name):
     return {"videos": []}
 
 
+def resolve_video_path(relative_path):
+    """Only accept recording files inside a dated Videos folder."""
+    if not isinstance(relative_path, str):
+        return None
+    parts = Path(relative_path.replace("\\", "/")).parts
+    if len(parts) != 2 or not parse_folder_date(parts[0]) or Path(parts[1]).suffix.lower() not in {".mp4", ".webm"}:
+        return None
+    root = VIDEOS_DIR.resolve()
+    path = (root / parts[0] / parts[1]).resolve()
+    return path if path.parent == root / parts[0] else None
+
+
 def save_stats(folder_name, stats):
     """Save stats.json for a given date folder"""
     folder_path = VIDEOS_DIR / folder_name
@@ -1059,6 +1072,21 @@ class CamDongHangHandler(http.server.BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
+        if path == "/api/videos/download":
+            relative_path = urllib.parse.parse_qs(parsed.query).get("path", [""])[0]
+            file_path = resolve_video_path(relative_path)
+            if file_path is None:
+                self.send_error_json("Đường dẫn video không hợp lệ", 400)
+            elif not file_path.is_file():
+                self.send_error_json("Video không còn trên máy này", 404)
+            else:
+                self.serve_file(file_path, download=True)
+            return
+
+        if path == "/api/videos/download-all":
+            self.handle_download_all_videos()
+            return
+
         # Root -> serve index.html
         if path == "/" or path == "":
             self.serve_file(PUBLIC_DIR / "index.html")
@@ -1078,11 +1106,17 @@ class CamDongHangHandler(http.server.BaseHTTPRequestHandler):
                 self.serve_file(public_file)
                 return
 
-        # /Videos/* -> serve video files and stats.json
+        # /Videos/* -> serve recordings and their date-folder stats.json
         if path.startswith("/Videos/"):
-            rel_path = path[len("/Videos/"):]
-            file_path = VIDEOS_DIR / rel_path
-            if file_path.exists() and file_path.is_file():
+            rel_path = urllib.parse.unquote(path[len("/Videos/"):])
+            file_path = resolve_video_path(rel_path)
+            if file_path is None:
+                parts = Path(rel_path.replace("\\", "/")).parts
+                if len(parts) == 2 and parse_folder_date(parts[0]) and parts[1] == "stats.json":
+                    file_path = (VIDEOS_DIR / parts[0] / "stats.json").resolve()
+                    if file_path.parent != VIDEOS_DIR.resolve() / parts[0]:
+                        file_path = None
+            if file_path is not None and file_path.is_file():
                 self.serve_file(file_path)
                 return
             self.send_error(404, "File not found")
@@ -1182,7 +1216,7 @@ class CamDongHangHandler(http.server.BaseHTTPRequestHandler):
         ".webp": "image/webp",
     }
 
-    def serve_file(self, file_path):
+    def serve_file(self, file_path, download=False):
         """Serve a static file"""
         file_path = Path(file_path).resolve()
 
@@ -1195,22 +1229,72 @@ class CamDongHangHandler(http.server.BaseHTTPRequestHandler):
 
         try:
             file_size = file_path.stat().st_size
-            self.send_response(200)
+            start, end = 0, file_size - 1
+            range_header = self.headers.get("Range", "") if ext in {".mp4", ".webm"} and not download else ""
+            if range_header:
+                match = _re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
+                if not match or (not match.group(1) and not match.group(2)):
+                    self.send_error(416, "Invalid range")
+                    return
+                if match.group(1):
+                    start = int(match.group(1))
+                    end = min(int(match.group(2)), file_size - 1) if match.group(2) else file_size - 1
+                else:
+                    start = max(0, file_size - int(match.group(2)))
+                if start >= file_size or end < start:
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{file_size}")
+                    self.end_headers()
+                    return
+            self.send_response(206 if range_header else 200)
             self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", file_size)
+            self.send_header("Content-Length", end - start + 1)
             self.send_header("Cache-Control", "no-cache")
+            if ext in {".mp4", ".webm"}:
+                self.send_header("Accept-Ranges", "bytes")
+            if range_header:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+            if download:
+                self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + urllib.parse.quote(file_path.name))
             self.end_headers()
 
             with open(file_path, "rb") as f:
+                f.seek(start)
                 # Stream large files in chunks
-                while True:
-                    chunk = f.read(65536)
+                remaining = end - start + 1
+                while remaining:
+                    chunk = f.read(min(65536, remaining))
                     if not chunk:
                         break
                     self.wfile.write(chunk)
+                    remaining -= len(chunk)
 
         except (IOError, BrokenPipeError) as e:
             print(f"[Error] Serving file {file_path.name}: {e}")
+
+    def handle_download_all_videos(self):
+        """Stream a ZIP of recordings without buffering it in memory or on disk."""
+        files = []
+        if VIDEOS_DIR.is_dir():
+            for folder in sorted(VIDEOS_DIR.iterdir()):
+                if folder.is_dir() and parse_folder_date(folder.name):
+                    for path in sorted(folder.iterdir()):
+                        if path.is_file() and path.suffix.lower() in {".mp4", ".webm"} and resolve_video_path(f"{folder.name}/{path.name}") == path.resolve():
+                            files.append(path)
+        if not files:
+            self.send_error_json("Không có video trên máy này để tải", 404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Disposition", 'attachment; filename="CamDongHang-Videos.zip"')
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        try:
+            with zipfile.ZipFile(self.wfile, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+                for path in files:
+                    archive.write(path, arcname=f"{path.parent.name}/{path.name}")
+        except (OSError, BrokenPipeError) as error:
+            print(f"[Videos] Download all interrupted: {error}")
 
     # ---------- API: CHECK DUPLICATE ----------
 
@@ -1442,7 +1526,14 @@ class CamDongHangHandler(http.server.BaseHTTPRequestHandler):
                         continue
 
                     stats = load_stats(folder.name)
-                    videos = list(stats.get("videos", []))
+                    videos = []
+                    for entry in stats.get("videos", []):
+                        video = dict(entry)
+                        file_path = resolve_video_path(f"{folder.name}/{video.get('filename', '')}")
+                        video["available"] = bool(file_path and file_path.is_file())
+                        if video["available"]:
+                            video["size"] = file_path.stat().st_size
+                        videos.append(video)
 
                     # Also scan for mp4 files on disk not tracked in stats.json
                     tracked_files = {v.get("filename") for v in videos}
@@ -1463,6 +1554,7 @@ class CamDongHangHandler(http.server.BaseHTTPRequestHandler):
                                 "timestamp": datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
                                 "orderType": "normal",
                                 "uploaded": False,
+                                "available": True,
                                 "relativePath": f"{folder.name}/{mp4_file.name}"
                             })
 
@@ -1470,7 +1562,8 @@ class CamDongHangHandler(http.server.BaseHTTPRequestHandler):
                         group = {
                             "date": folder.name,
                             "videos": videos,
-                            "totalSize": sum(v.get("size", 0) for v in videos),
+                            "totalSize": sum(v.get("size", 0) for v in videos if v.get("available")),
+                            "availableCount": sum(1 for v in videos if v.get("available")),
                             "uploadedCount": sum(1 for v in videos if v.get("uploaded")),
                             "totalCount": len(videos),
                         }
@@ -1492,15 +1585,12 @@ class CamDongHangHandler(http.server.BaseHTTPRequestHandler):
                 self.send_error_json("relativePath is required", 400)
                 return
 
-            # Build full path relative to VIDEOS_DIR
-            file_path = (VIDEOS_DIR / relative_path).resolve()
-
-            # Security: ensure file is within VIDEOS_DIR
-            if not str(file_path).startswith(str(VIDEOS_DIR.resolve())):
+            file_path = resolve_video_path(relative_path)
+            if file_path is None:
                 self.send_error_json("Access denied", 403)
                 return
 
-            if not file_path.exists():
+            if not file_path.is_file():
                 self.send_error_json(f"File not found: {relative_path}", 404)
                 return
 

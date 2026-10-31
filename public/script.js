@@ -3037,11 +3037,44 @@ const videosBtn = document.getElementById('videos-btn');
 const videosModal = document.getElementById('videos-modal');
 const closeVideosBtn = document.getElementById('close-videos');
 const videosList = document.getElementById('videos-list');
-const videosSelectedCount = document.getElementById('videos-selected-count');
-const videosSelectedSize = document.getElementById('videos-selected-size');
+const videosAvailableCount = document.getElementById('videos-available-count');
+const downloadAllVideos = document.getElementById('download-all-videos');
+const videoPlayerModal = document.getElementById('video-player-modal');
+const videoPlayer = document.getElementById('video-player');
+const videoPlayerTitle = document.getElementById('video-player-title');
+const videoPlayerError = document.getElementById('video-player-error');
 
 let videosData = [];
-let selectedVideos = new Set();
+
+function closeVideoPlayer() {
+    videoPlayer.pause();
+    videoPlayer.removeAttribute('src');
+    videoPlayer.load();
+    videoPlayerModal.hidden = true;
+}
+
+document.getElementById('close-video-player').addEventListener('click', closeVideoPlayer);
+videoPlayerModal.addEventListener('mousedown', event => {
+    if (event.target === videoPlayerModal) closeVideoPlayer();
+});
+window.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !videoPlayerModal.hidden) closeVideoPlayer();
+});
+
+videoPlayer.addEventListener('error', () => {
+    videoPlayerError.textContent = 'Không phát được video. File có thể đã mất hoặc định dạng không được trình duyệt hỗ trợ. Hãy thử Tải lại để kiểm tra file.';
+    videoPlayerError.hidden = false;
+});
+
+function playSavedVideo(video, relativePath) {
+    if (!video.available) return;
+    videoPlayerTitle.textContent = video.filename;
+    videoPlayerError.hidden = true;
+    videoPlayerModal.hidden = false;
+    videoPlayer.src = `/Videos/${relativePath.split('/').map(encodeURIComponent).join('/')}`;
+    videoPlayer.load();
+    videoPlayer.play().catch(() => { /* Browser may require a second click on Play. */ });
+}
 
 videosBtn.addEventListener('click', () => {
     videosModal.classList.add('active');
@@ -3049,19 +3082,20 @@ videosBtn.addEventListener('click', () => {
 });
 
 closeVideosBtn.addEventListener('click', () => {
+    closeVideoPlayer();
     videosModal.classList.remove('active');
 });
 
 videosModal.addEventListener('mousedown', (e) => {
     if (e.target === videosModal) {
+        closeVideoPlayer();
         videosModal.classList.remove('active');
     }
 });
 
 async function loadVideosList() {
     videosList.innerHTML = '<div style="text-align:center; padding:40px; color:var(--text-secondary);">⏳ Đang tải...</div>';
-    selectedVideos.clear();
-    updateSelectedCount();
+    videosAvailableCount.textContent = 'Đang kiểm tra video...';
 
     try {
         const resp = await fetch('/api/videos/list', {
@@ -3071,9 +3105,15 @@ async function loadVideosList() {
         });
         const data = await resp.json();
         videosData = data.groups || [];
+        const availableCount = videosData.reduce((sum, group) => sum + (group.availableCount || 0), 0);
+        const totalCount = videosData.reduce((sum, group) => sum + group.totalCount, 0);
+        videosAvailableCount.textContent = `${availableCount}/${totalCount} video trên máy${totalCount > availableCount ? ` · ${totalCount - availableCount} thiếu file` : ''}`;
+        downloadAllVideos.hidden = availableCount === 0;
 
         renderVideosList();
     } catch (err) {
+        videosAvailableCount.textContent = 'Không kiểm tra được video';
+        downloadAllVideos.hidden = true;
         videosList.innerHTML = `<div style="text-align:center; padding:40px; color:var(--accent-red);">Lỗi: ${err.message}</div>`;
     }
 }
@@ -3103,7 +3143,7 @@ function renderVideosList() {
             <div class="video-date-stats">
                 <span>${group.totalCount} video</span>
                 <span>${totalSize} MB</span>
-                <span>${group.uploadedCount}/${group.totalCount} uploaded</span>
+                <span>${group.availableCount}/${group.totalCount} trên máy</span>
             </div>
         `;
 
@@ -3119,52 +3159,53 @@ function renderVideosList() {
             const item = document.createElement('div');
             item.className = 'video-card';
 
-            const isUploaded = video.uploaded;
             const sizeMB = video.size ? (video.size / (1024 * 1024)).toFixed(1) : '?';
             const parts = video.filename.replace(/\.(mp4|webm)$/i, '').split('_');
             const cameraLabel = parts[0] || 'Camera';
             const code = parts.slice(1).join('_') || video.code || '';
 
-            // Video URL for thumbnail
-            const videoUrl = `/Videos/${group.date}/${encodeURIComponent(video.filename)}`;
-
             item.innerHTML = `
-                <div class="video-card-thumb" data-key="${videoKey}">
+                <div class="video-card-thumb" role="button" tabindex="0" aria-label="Xem video">
                     <div class="video-thumb-placeholder">🎬</div>
                     <div class="video-card-play">▶</div>
                     <div class="video-card-duration">${sizeMB} MB</div>
                 </div>
                 <div class="video-card-body">
-                    <div class="video-card-checkbox">
-                        <input type="checkbox" data-key="${videoKey}" ${isUploaded ? 'disabled' : ''}>
-                    </div>
                     <div class="video-card-info">
-                        <div class="video-card-name" title="${video.filename}">${cameraLabel}</div>
-                        <div class="video-card-code" title="${code}">${code}</div>
-                    </div>
-                    </div>
-                    <div class="video-card-actions">
+                        <div class="video-card-name"></div>
+                        <div class="video-card-code"></div>
                     </div>
                 </div>
+                <div class="video-card-actions"></div>
             `;
+            item.querySelector('.video-card-name').textContent = cameraLabel;
+            item.querySelector('.video-card-name').title = video.filename;
+            item.querySelector('.video-card-code').textContent = code;
+            item.querySelector('.video-card-code').title = code;
 
-            // Click thumbnail to open in default player
             const thumb = item.querySelector('.video-card-thumb');
-            thumb.addEventListener('click', async () => {
-                thumb.querySelector('.video-card-play').textContent = '⏳';
-                try {
-                    await fetch('/api/open-video', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ relativePath: videoKey })
-                    });
-                } catch (e) {
-                    console.error('Open video error:', e);
+            thumb.addEventListener('click', () => playSavedVideo(video, videoKey));
+            thumb.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    playSavedVideo(video, videoKey);
                 }
-                setTimeout(() => {
-                    thumb.querySelector('.video-card-play').textContent = '▶';
-                }, 1500);
             });
+            const actions = item.querySelector('.video-card-actions');
+            if (video.available) {
+                const download = document.createElement('a');
+                download.className = 'videos-action-btn';
+                download.textContent = '⬇ Tải lại';
+                download.href = `/api/videos/download?path=${encodeURIComponent(videoKey)}`;
+                actions.appendChild(download);
+            } else {
+                thumb.classList.add('unavailable');
+                thumb.setAttribute('aria-disabled', 'true');
+                const missing = document.createElement('span');
+                missing.className = 'video-missing';
+                missing.textContent = 'Không còn file trên máy này';
+                actions.appendChild(missing);
+            }
 
             itemsContainer.appendChild(item);
         });
@@ -3176,15 +3217,6 @@ function renderVideosList() {
 
     // LIGHTWEIGHT: No video preloading, just CSS placeholders
     // This prevents browser from downloading all videos simultaneously
-}
-
-function updateSelectedCount() {
-    videosSelectedCount.textContent = `${selectedVideos.size} video được chọn`;
-    if (selectedVideos.size > 0) {
-        videosSelectedSize.textContent = '';
-    } else {
-        videosSelectedSize.textContent = '';
-    }
 }
 
 

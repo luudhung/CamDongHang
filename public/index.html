@@ -402,16 +402,27 @@
             <div class="statistics-body">
                 <div class="videos-toolbar">
                     <div class="videos-toolbar-info">
-                        <span id="videos-selected-count">0 video được chọn</span>
-                        <span id="videos-selected-size"></span>
+                        <span id="videos-available-count">Đang kiểm tra video...</span>
                     </div>
                     <div class="videos-toolbar-actions">
+                        <a id="download-all-videos" class="videos-action-btn" href="/api/videos/download-all">⬇ Tải tất cả (.zip)</a>
                     </div>
                 </div>
                 <div id="videos-list" class="videos-list">
                     <div style="text-align:center; padding:40px; color:var(--text-secondary);">Đang tải danh sách video...</div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div id="video-player-modal" class="video-player-modal" role="dialog" aria-modal="true" aria-label="Phát video" hidden>
+        <div class="video-player-content">
+            <div class="video-player-header">
+                <strong id="video-player-title"></strong>
+                <button id="close-video-player" class="videos-action-btn" type="button">Đóng</button>
+            </div>
+            <video id="video-player" controls playsinline preload="metadata"></video>
+            <p id="video-player-error" class="video-player-error" role="alert" hidden></p>
         </div>
     </div>
 
