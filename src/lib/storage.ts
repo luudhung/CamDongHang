@@ -89,7 +89,7 @@ export async function runUploadQueue(retry=false){
   try{if(navigator.locks){await navigator.locks.request(`camdonghang-upload:${await owner()}`,{ifAvailable:true},async lock=>{if(lock)await process();});}else await process();}finally{queueBusy=false;}
 }
 export async function retryUploads(){await runUploadQueue(true);}
-export type DriveFolder={id:string;name:string};
+export type DriveFolder={id:string;name:string;path?:string};
 function driveQueryValue(value:string){return value.replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
 export async function listDriveFolders(parentId='root'):Promise<DriveFolder[]>{
   const {accessToken}=await driveToken();
